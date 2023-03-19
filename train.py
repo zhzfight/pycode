@@ -215,27 +215,27 @@ def train(args):
 
     p, c = process_data(train_df, args.context_size)
 
-    def word2vecPoiContextDataset(Dataset):
-        def __init(self, p):
-            self.ps = p[:, 0]
-            self.pcs = p[:, 1]
+    class word2vecPoiContextDataset(Dataset):
+        def __init__(self, p):
+            self.ps = [x[0] for x in p]
+            self.pcs = [x[1] for x in p]
 
         def __len__(self):
             return len(self.ps)
 
-        def __getitem(self, index):
+        def __getitem__(self, index):
             return self.ps[index], self.pcs[index]
 
-    def word2vecCatContextDataset(Dataset):
-        def __init(self, c):
-            self.ps = p[:, 0]
-            self.cs = p[:, 1]
-            self.ccs = p[:, 2]
+    class word2vecCatContextDataset(Dataset):
+        def __init__(self, c):
+            self.ps = [x[0] for x in c]
+            self.cs = [x[1] for x in c]
+            self.ccs = [x[2] for x in c]
 
         def __len__(self):
-            return len(self.ps)
+            return len(self.cs)
 
-        def __getitem(self, index):
+        def __getitem__(self, index):
             return self.ps[index], self.cs[index], self.ccs[index]
 
     # %% ====================== Define dataloader ======================
@@ -279,7 +279,7 @@ def train(args):
 
     seq_model = TransformerModel(num_pois,
                                  num_cats,
-                                 args.input_dim,
+                                 args.seq_input_embed,
                                  args.transformer_hidden_dim,
                                  args.transformer_nlayers,
                                  args.device,
@@ -433,8 +433,8 @@ def train(args):
 
         for _, batch in enumerate(p_loader):
             target, context = batch
-            input_target = torch.LongTensor(target)
-            input_context = torch.LongTensor(context)
+            input_target = torch.LongTensor(target).to(args.device)
+            input_context = torch.LongTensor(context).to(args.device)
             input_target=poi_embed_model(input_target)
             positive, negative = word2vec(input_target, input_context, 16)
             # Optimizer Initialize
@@ -444,9 +444,9 @@ def train(args):
 
         for _, batch in enumerate(c_loader):
             poi, target, context = batch
-            input_poi = torch.cuda.LongTensor(poi)
-            input_target = torch.cuda.LongTensor(target)
-            input_context = torch.cuda.LongTensor(context)
+            input_poi = torch.cuda.LongTensor(poi).to(args.device)
+            input_target = torch.cuda.LongTensor(target).to(args.device)
+            input_context = torch.cuda.LongTensor(context).to(args.device)
             input_poi=poi_embed_model(input_poi)
             input_target=cat_embed_model(input_target)
             # Optimizer Initialize
