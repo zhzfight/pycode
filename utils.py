@@ -3,12 +3,78 @@ import math
 import os
 import re
 from pathlib import Path
-
+import datetime
+import pandas as pd
 import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 from scipy.sparse.linalg import eigsh
+from tqdm import tqdm
 
+def computeTimeIntervalMatrix(time_seq,size):
+    time_matrix = np.zeros([size, size], dtype=np.int32)
+    shift=size-len(time_seq)
+    for i in range(len(time_seq)):
+        for j in range(len(time_seq)):
+            span = abs(time_seq[i]-time_seq[j])
+            time_matrix[i][j+shift]=span
+    return time_matrix
+def data_preprocessing(path,drop_poi,drop_user,split_time,seqlen_thre):
+    df = pd.read_csv(path)
+    # drop the different timezone
+    df=df.drop(df[df['timezoneOffset']!=df['timezoneOffset'].value_counts().idxmax()].index)
+    #
+    df=df[df["venueId"].isin(df["venueId"].value_counts()[df["venueId"].value_counts() >= drop_poi].index)]
+    df=df[df["userId"].isin(df["userId"].value_counts()[df["userId"].value_counts() >= drop_user].index)]
+    poi_ids = list(set(df['venueId'].tolist()))
+    poi_ids2idx=dict(zip(poi_ids,range(1,len(poi_ids)+1)))
+    cat_ids = list(set(df['venueCategoryId'].tolist()))
+    cat_id2idx_dict = dict(zip(cat_ids, range(1,len(cat_ids)+1)))
+    user_ids = list(set(df['userId'].to_list()))
+    user_id2idx_dict = dict(zip(user_ids, range(1,len(user_ids)+1)))
+    df['venueId']=df['venueId'].map(poi_ids2idx)
+    df['venueCategoryId']=df['venueCategoryId'].map(cat_id2idx_dict)
+    df['userId']=df['userId'].map(user_id2idx_dict)
+    df['traj_id']=''
+    num_pois=len(set(df['venueId'].tolist()))
+    num_cats=len(set(df['venueCategoryId'].tolist()))
+    num_users=len(set(df['userId'].tolist()))
+    def convert_to_datetime(utctimestamp):
+        utcdate = datetime.datetime.strptime(utctimestamp, "%a %b %d %H:%M:%S %z %Y") # 转换成UTC日期和时间对象
+        return utcdate
+    df['datetime']=df['utcTimestamp'].apply(convert_to_datetime)
+    def time_feature(utctimestamp):
+        utcdate = datetime.datetime.strptime(utctimestamp, "%a %b %d %H:%M:%S %z %Y") # 转换成UTC日期和时间对象
+        normal_time_inday=(utcdate.time().hour*3600+utcdate.time().minute*60+utcdate.time().second)/86400
+        return utcdate.weekday()+normal_time_inday
+    df['time_feature']=df['utcTimestamp'].apply(time_feature)
+    df.drop(['venueCategory','latitude','longitude','timezoneOffset','utcTimestamp'],axis=1,inplace=True)
+    df=df.sort_values(by='userId',kind='mergeSort')
+    seq_no=0
+    prev_user=-1
+    prev_datetime=None
+    for i in tqdm(range(len(df))):
+        cur_user=df['userId'].iloc[i]
+        if cur_user!=prev_user:
+            seq_no=1
+            prev_user=cur_user
+            prev_datetime=df['datetime'].iloc[i]
+            df['traj_id'].iloc[i]=str(cur_user)+'_'+str(seq_no)
+            continue
+        if (df['datetime'].iloc[i]-prev_datetime).total_seconds()>split_time:
+            seq_no+=1
+        df['traj_id'].iloc[i]=str(cur_user)+'_'+str(seq_no)
+        prev_datetime=df['datetime'].iloc[i]
+    # drop seqlen < 3
+    df=df.groupby('traj_id').filter(lambda x: len(x) >= seqlen_thre)
+    return df,num_pois,num_cats,num_users,df.groupby('traj_id').size().max(),df.groupby('traj_id').size().mean()
+def split_df(df):
+    df1=df.copy(deep=True)
+    for name,ugroup in df.groupby(['userId']):
+        df.drop(df1[(df1['traj_id']==ugroup.tail(1)['traj_id'].values[0]) & (df1['userId']==name)].index,inplace=True)
+    for name,ugroup in df1.groupby(['userId']):
+        df1.drop(df1[(df1['traj_id']!=ugroup.tail(1)['traj_id'].values[0]) & (df1['userId']==name)].index,inplace=True)
+    return df,df1
 
 def fit_delimiter(string='', length=80, delimiter="="):
     result_len = length - len(string)
