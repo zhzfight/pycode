@@ -189,9 +189,7 @@ class TransformerModel(nn.Module):
         for i in range(len(self.attention_layers)):
             # Self-attention, Q=layernorm(seqs), K=V=seqs
             # seqs = torch.transpose(seqs, 0, 1) # (N, T, C) -> (T, N, C)
-            print(batch_seq_embeds.shape)
             Q = self.attention_layernorms[i](batch_seq_embeds) # PyTorch mha requires time first fmt
-            print(Q.shape)
             mha_outputs = self.attention_layers[i](Q, time_mask, attention_mask,
                                             batch_seq_timeMatrix)
             batch_seq_embeds = Q + mha_outputs
