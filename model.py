@@ -7,96 +7,10 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 
 
-class NodeAttnMap(nn.Module):
-    def __init__(self, in_features, nhid, use_mask=False):
-        super(NodeAttnMap, self).__init__()
-        self.use_mask = use_mask
-        self.out_features = nhid
-        self.W = nn.Parameter(torch.empty(size=(in_features, nhid)))
-        nn.init.xavier_uniform_(self.W.data, gain=1.414)
-        self.a = nn.Parameter(torch.empty(size=(2 * nhid, 1)))
-        nn.init.xavier_uniform_(self.a.data, gain=1.414)
-        self.leakyrelu = nn.LeakyReLU(0.2)
-
-    def forward(self, X, A):
-        Wh = torch.mm(X, self.W)
-
-        e = self._prepare_attentional_mechanism_input(Wh)
-
-        if self.use_mask:
-            e = torch.where(A > 0, e, torch.zeros_like(e))  # mask
-
-        A = A + 1  # shift from 0-1 to 1-2
-        e = e * A
-
-        return e
-
-    def _prepare_attentional_mechanism_input(self, Wh):
-        Wh1 = torch.matmul(Wh, self.a[:self.out_features, :])
-        Wh2 = torch.matmul(Wh, self.a[self.out_features:, :])
-        e = Wh1 + Wh2.T
-        return self.leakyrelu(e)
-
-
-class GraphConvolution(nn.Module):
-    def __init__(self, in_features, out_features, bias=True):
-        super(GraphConvolution, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
-        if bias:
-            self.bias = Parameter(torch.FloatTensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        stdv = 1. / math.sqrt(self.weight.size(1))
-        self.weight.data.uniform_(-stdv, stdv)
-        if self.bias is not None:
-            self.bias.data.uniform_(-stdv, stdv)
-
-    def forward(self, input, adj):
-        support = torch.mm(input, self.weight)
-        output = torch.spmm(adj, support)
-        if self.bias is not None:
-            return output + self.bias
-        else:
-            return output
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' (' \
-            + str(self.in_features) + ' -> ' \
-            + str(self.out_features) + ')'
-
-
-class GCN(nn.Module):
-    def __init__(self, ninput, nhid, noutput, dropout):
-        super(GCN, self).__init__()
-
-        self.gcn = nn.ModuleList()
-        self.dropout = dropout
-        self.leaky_relu = nn.LeakyReLU(0.2)
-
-        channels = [ninput] + nhid + [noutput]
-        for i in range(len(channels) - 1):
-            gcn_layer = GraphConvolution(channels[i], channels[i + 1])
-            self.gcn.append(gcn_layer)
-
-    def forward(self, x, adj):
-        for i in range(len(self.gcn) - 1):
-            x = self.leaky_relu(self.gcn[i](x, adj))
-
-        x = F.dropout(x, self.dropout, training=self.training)
-        x = self.gcn[-1](x, adj)
-
-        return x
-
-
 class PoiEmbeddings(nn.Module):
     def __init__(self,num_pois,embedding_dim):
         super(PoiEmbeddings,self).__init__()
-        self.Poi_embedding=nn.Embedding(num_embeddings=num_pois,embedding_dim=embedding_dim,padding_idx=0)
+        self.Poi_embedding=nn.Embedding(num_embeddings=num_pois+1,embedding_dim=embedding_dim,padding_idx=0)
     def forward(self,poi_ids):
         embed=self.Poi_embedding(poi_ids)
         return embed
@@ -106,7 +20,7 @@ class UserEmbeddings(nn.Module):
         super(UserEmbeddings, self).__init__()
 
         self.user_embedding = nn.Embedding(
-            num_embeddings=num_users,
+            num_embeddings=num_users+1,
             embedding_dim=embedding_dim,
             padding_idx=0
         )
@@ -121,7 +35,7 @@ class CategoryEmbeddings(nn.Module):
         super(CategoryEmbeddings, self).__init__()
 
         self.cat_embedding = nn.Embedding(
-            num_embeddings=num_cats,
+            num_embeddings=num_cats+1,
             embedding_dim=embedding_dim,
             padding_idx=0
         )
@@ -139,24 +53,36 @@ class FuseEmbeddings(nn.Module):
         self.leaky_relu = nn.LeakyReLU(0.2)
 
     def forward(self, user_embed, poi_embed):
-        x = self.fuse_embed(torch.cat((user_embed, poi_embed), 0))
+        x = self.fuse_embed(torch.cat((user_embed, poi_embed), -1))
         x = self.leaky_relu(x)
         return x
 
 
 class TimeIntervalEmbeddings(nn.Module):
-    def __init__(self,dim):
+    def __init__(self,dim,tu,tl):
+        super(TimeIntervalEmbeddings,self).__init__()
+        self.dim=dim
         self.emb_tu = torch.nn.Embedding(2, dim, padding_idx=0)
         self.emb_tl = torch.nn.Embedding(2, dim, padding_idx=0)
-        self.tu=6*60*60
-        self.tl=0
-    def forward(self,delta_t,traj_len):
+        self.tu=torch.LongTensor([tu])
+        self.tl=torch.LongTensor([tl])
+    def forward(self,delta_t,traj_len,max_len):
         mask = torch.zeros_like(delta_t, dtype=torch.long)
         for i in range(mask.shape[0]):
-            mask[i, 0:traj_len[i], 0:traj_len[i]] = 1
+            mask[i, max_len-traj_len[i]:, max_len-traj_len[i]:] = 1
         etl, etu = self.emb_tl(mask), self.emb_tu(mask)
-        vtl, vtu = (delta_t - self.tl).unsqueeze(-1).expand(-1, -1, -1, 4), \
-            (self.tu - delta_t).unsqueeze(-1).expand(-1, -1, -1, 4)
+        vtl, vtu = (delta_t - self.tl).unsqueeze(-1).expand(-1, -1, -1, self.dim), \
+            (self.tu - delta_t).unsqueeze(-1).expand(-1, -1, -1, self.dim)
+
+        time_interval = (etl * vtu + etu * vtl) / (self.tu - self.tl)
+        return time_interval
+    def label_forward(self,delta_t,traj_len,max_len):
+        mask = torch.zeros_like(delta_t, dtype=torch.long)
+        for i in range(mask.shape[0]):
+            mask[i, max_len - traj_len[i]:] = 1
+        etl, etu = self.emb_tl(mask), self.emb_tu(mask)
+        vtl, vtu = (delta_t - self.tl).unsqueeze(-1).expand( -1, -1, self.dim), \
+            (self.tu - delta_t).unsqueeze(-1).expand( -1, -1, self.dim)
 
         time_interval = (etl * vtu + etu * vtl) / (self.tu - self.tl)
         return time_interval
@@ -166,7 +92,7 @@ class TimeEmbeddings(nn.Module):
         super(TimeEmbeddings, self).__init__()
 
         self.time_embedding = nn.Embedding(
-            num_embeddings=time_slot,
+            num_embeddings=time_slot+1,
             embedding_dim=embedding_dim,
             padding_idx=0
         )
@@ -232,8 +158,9 @@ class PointWiseFeedForward(torch.nn.Module):
         outputs += inputs
         return outputs
 class TransformerModel(nn.Module):
-    def __init__(self, num_poi, num_cat, input_dim, hidden_dim, nlayers, dev, dropout=0.5):
+    def __init__(self, num_poi, num_cat, input_dim, hidden_dim, nlayers, device, dropout=0.5):
         super(TransformerModel, self).__init__()
+        self.device=device
         self.attention_layernorms = torch.nn.ModuleList()  # to be Q for self-attention
         self.attention_layers = torch.nn.ModuleList()
         self.forward_layernorms = torch.nn.ModuleList()
@@ -241,12 +168,13 @@ class TransformerModel(nn.Module):
         self.last_layernorm = torch.nn.LayerNorm(hidden_dim, eps=1e-8)
         self.decoder_poi=torch.nn.Linear(hidden_dim, num_poi)
         self.decoder_cat=torch.nn.Linear(hidden_dim, num_cat)
+        self.first_fwd_layer=torch.nn.Linear(input_dim,hidden_dim)
 
         for _ in range(nlayers):
             new_attn_layernorm = torch.nn.LayerNorm(hidden_dim, eps=1e-8)
             self.attention_layernorms.append(new_attn_layernorm)
 
-            new_attn_layer = Encoder(input_dim,hidden_dim, dev, dropout)
+            new_attn_layer = Encoder(hidden_dim,hidden_dim, self.device, dropout)
             self.attention_layers.append(new_attn_layer)
 
             new_fwd_layernorm = torch.nn.LayerNorm(hidden_dim, eps=1e-8)
@@ -256,23 +184,25 @@ class TransformerModel(nn.Module):
             self.forward_layers.append(new_fwd_layer)
     def forward(self,batch_seq_embeds,batch_seq_labels_timeInterval,time_mask,batch_seq_timeMatrix):
         tl = batch_seq_embeds.shape[1]  # time dim len for enforce causality
-        attention_mask = ~torch.tril(torch.ones((tl, tl), dtype=torch.bool, device=self.dev))
+        attention_mask = ~torch.tril(torch.ones((tl, tl), dtype=torch.bool, device=self.device))
+        batch_seq_embeds=self.first_fwd_layer(batch_seq_embeds)
         for i in range(len(self.attention_layers)):
             # Self-attention, Q=layernorm(seqs), K=V=seqs
             # seqs = torch.transpose(seqs, 0, 1) # (N, T, C) -> (T, N, C)
+            print(batch_seq_embeds.shape)
             Q = self.attention_layernorms[i](batch_seq_embeds) # PyTorch mha requires time first fmt
-            mha_outputs = self.attention_layers[i](Q, seqs,
-                                            time_mask, attention_mask,
+            print(Q.shape)
+            mha_outputs = self.attention_layers[i](Q, time_mask, attention_mask,
                                             batch_seq_timeMatrix)
-            seqs = Q + mha_outputs
+            batch_seq_embeds = Q + mha_outputs
             # seqs = torch.transpose(seqs, 0, 1) # (T, N, C) -> (N, T, C)
 
             # Point-wise Feed-forward, actually 2 Conv1D for channel wise fusion
-            seqs = self.forward_layernorms[i](seqs)
-            seqs = self.forward_layers[i](seqs)
-            seqs *=  ~time_mask.unsqueeze(-1)
+            batch_seq_embeds = self.forward_layernorms[i](batch_seq_embeds)
+            batch_seq_embeds = self.forward_layers[i](batch_seq_embeds)
+            batch_seq_embeds *=  ~time_mask.unsqueeze(-1)
 
-        log_feats = self.last_layernorm(seqs)
+        log_feats = self.last_layernorm(batch_seq_embeds)
         log_feats+=batch_seq_labels_timeInterval
         out_poi=self.decoder_poi(log_feats)
         out_cat=self.decoder_cat(log_feats)

@@ -19,7 +19,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from dataloader import load_graph_adj_mtx, load_graph_node_features
-from model import GCN, NodeAttnMap, UserEmbeddings, CategoryEmbeddings, FuseEmbeddings, TransformerModel, \
+from model import  UserEmbeddings, CategoryEmbeddings, FuseEmbeddings, TransformerModel, \
     PoiEmbeddings, TimeEmbeddings, CAPE, TimeIntervalEmbeddings
 from param_parser import parameter_parser
 from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_last_timestep, \
@@ -62,7 +62,7 @@ def train(args):
 
     train_df, test_df = split_df(df)
     logging.info(f"num_pois:{num_pois}, num_cats:{num_cats}, max_len:{max_len}, mean_len:{mean_len}")
-
+    print(f"num_pois:{num_pois}, num_cats:{num_cats}, max_len:{max_len}, mean_len:{mean_len}")
     # %% ====================== Define Dataset ======================
     train_user_set = set()
 
@@ -86,7 +86,7 @@ def train(args):
             self.input_seqlens = []
 
             for traj_id in tqdm(set(train_df['traj_id'].tolist())):
-                user_id = traj_id.split('_')[0]
+                user_id = int(traj_id.split('_')[0])
                 train_user_set.add(user_id)
 
                 traj_df = train_df[train_df['traj_id'] == traj_id]
@@ -94,6 +94,7 @@ def train(args):
                 poi_ids = traj_df['venueId'].tolist()
                 cat_ids = traj_df['venueCategoryId'].tolist()
                 time_feature = traj_df['time_feature'].tolist()
+                time_feature = [int(x * args.time_slot) for x in time_feature]
                 date_time = traj_df['datetime'].tolist()
 
                 a = max(0, max_len - seqlen)
@@ -111,7 +112,7 @@ def train(args):
                 lp[a:] = poi_ids[b + 1:]
                 lc[a:] = cat_ids[b + 1:]
 
-                target_Interval = [(x - y).total_seconds for x, y in zip(date_time[1:], date_time[:-1])]
+                target_Interval = [(x - y).total_seconds() for x, y in zip(date_time[1:], date_time[:-1])]
                 lti[a:] = target_Interval[b:]
 
                 self.input_seqlens.append(min(seqlen,max_len))
@@ -147,7 +148,7 @@ def train(args):
             self.input_seqlens = []
 
             for traj_id in tqdm(set(test_df['traj_id'].tolist())):
-                user_id = traj_id.split('_')[0]
+                user_id = int(traj_id.split('_')[0])
 
                 # Ignore user if not in training set
                 if user_id not in train_user_set:
@@ -157,6 +158,7 @@ def train(args):
                 poi_ids = traj_df['venueId'].tolist()
                 cat_ids = traj_df['venueCategoryId'].tolist()
                 time_feature = traj_df['time_feature'].tolist()
+                time_feature=[int(x*args.time_slot) for x in time_feature]
                 date_time = traj_df['datetime'].tolist()
 
                 a = max(0, max_len - seqlen)
@@ -174,7 +176,7 @@ def train(args):
                 lp[a:] = poi_ids[b + 1:]
                 lc[a:] = cat_ids[b + 1:]
 
-                target_Interval = [(x - y).total_seconds for x, y in zip(date_time[1:], date_time[:-1])]
+                target_Interval = [(x - y).total_seconds() for x, y in zip(date_time[1:], date_time[:-1])]
                 lti[a:] = target_Interval[b:]
 
                 self.input_seqlens.append(min(seqlen,max_len))
@@ -244,15 +246,34 @@ def train(args):
     test_dataset = TrajectoryDatasetTest(test_df,max_len)
     p_dataset = word2vecPoiContextDataset(p)
     c_dataset = word2vecCatContextDataset(c)
-
+    def collect_fn1(batch):
+        u = [x[0] for x in batch]
+        ip = [x[1] for x in batch]
+        ic = [x[2] for x in batch]
+        it=[x[3] for x in batch]
+        lp=[x[4] for x in batch]
+        lc=[x[5] for x in batch]
+        lti=[x[6] for x in batch]
+        itm=[x[7] for x in batch]
+        seqlen=[x[8] for x in batch]
+        return u,ip,ic,it,lp,lc,lti,itm,seqlen
+    def collect_fn2(batch):
+        p=[x[0] for x in batch]
+        pc=[x[1] for x in batch]
+        return p,pc
+    def collect_fn3(batch):
+        p=[x[0] for x in batch]
+        c=[x[1] for x in batch]
+        cc=[x[2] for x in batch]
+        return p,c,cc
     train_loader = DataLoader(train_dataset,
                               batch_size=args.batch,
-                              shuffle=True)
+                              shuffle=True,collate_fn=collect_fn1)
     val_loader = DataLoader(test_dataset,
                             batch_size=args.batch,
-                            shuffle=False)
-    p_loader = DataLoader(p_dataset, batch_size=args.batch, shuffle=True)
-    c_loader = DataLoader(c_dataset, batch_size=args.batch, shuffle=True)
+                            shuffle=False,collate_fn=collect_fn1)
+    p_loader = DataLoader(p_dataset, batch_size=args.batch, shuffle=True,collate_fn=collect_fn2)
+    c_loader = DataLoader(c_dataset, batch_size=args.batch, shuffle=True,collate_fn=collect_fn3)
 
     # %% ====================== Build Models ======================
     # Model1: POI embedding model
@@ -267,7 +288,7 @@ def train(args):
 
     # %% Model4: Category embedding model
     cat_embed_model = CategoryEmbeddings(num_cats, args.cat_embed_dim)
-    timeInterval_embed_model = TimeIntervalEmbeddings(args.transformer_hidden_dim)
+    timeInterval_embed_model = TimeIntervalEmbeddings(args.transformer_hidden_dim,args.tu,args.tl)
     # %% Model5: Embedding fusion models
     embed_fuse_model1 = FuseEmbeddings(args.user_embed_dim, args.poi_embed_dim)
     embed_fuse_model2 = FuseEmbeddings(args.time_embed_dim, args.cat_embed_dim)
@@ -308,17 +329,19 @@ def train(args):
     def input_traj_to_embeddings(users,\
                 input_seqs_poi,input_seqs_cat,input_seqs_time_feature,label_timeInterval,input_seqs_timeMatrix,seqs_len,max_len):
         # Parse sample
-        users=[[[0]*(max_len-seqs_len[i])+users[i]]*seqs_len[i] for i in range(len(users))]
+        users=[[0]*(max_len-seqs_len[i])+[users[i]]*seqs_len[i] for i in range(len(users))]
         users=user_embed_model(torch.LongTensor(users).to(args.device))
 
         input_seqs_poi=poi_embed_model(torch.LongTensor(input_seqs_poi).to(args.device))
         input_seqs_cat=cat_embed_model(torch.LongTensor(input_seqs_cat).to(args.device))
+
+
         input_seqs_time_feature=time_embed_model(torch.LongTensor(input_seqs_time_feature).to(args.device))
         up_ct=torch.cat((embed_fuse_model1(users,input_seqs_poi),\
                          embed_fuse_model2(input_seqs_cat,input_seqs_time_feature)),dim=-1)
 
-        label_timeInterval=timeInterval_embed_model(torch.LongTensor(label_timeInterval).to(args.device))
-        timeMatrixs=timeInterval_embed_model(torch.LongTensor(input_seqs_timeMatrix).to(args.device))
+        label_timeInterval=timeInterval_embed_model.label_forward(torch.LongTensor(label_timeInterval).to(args.device),seqs_len,max_len)
+        timeMatrixs=timeInterval_embed_model(torch.LongTensor(input_seqs_timeMatrix).to(args.device),seqs_len,max_len)
 
         return up_ct,timeMatrixs,label_timeInterval
 
@@ -603,11 +626,12 @@ if __name__ == '__main__':
     args.cat_embed_dim=64
     args.user_embed_dim=128
     args.time_embed_dim=64
-    args.time_slots=24
+    args.time_slot=24
     args.transformer_hidden_dim=128
     args.transformer_nlayers=2
     args.transformer_dropout=0.1
     args.ALPHA=1
-
+    args.tu=6*60*60
+    args.tl=0
 
     train(args)
