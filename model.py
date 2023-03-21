@@ -158,7 +158,7 @@ class PointWiseFeedForward(torch.nn.Module):
         outputs += inputs
         return outputs
 class TransformerModel(nn.Module):
-    def __init__(self, num_poi, num_cat, input_dim, hidden_dim, nlayers, device, dropout=0.5):
+    def __init__(self, num_poi, num_cat, input_dim, hidden_dim, nlayers, device, dropout=0.1):
         super(TransformerModel, self).__init__()
         self.device=device
         self.attention_layernorms = torch.nn.ModuleList()  # to be Q for self-attention
