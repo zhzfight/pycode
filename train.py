@@ -12,9 +12,6 @@ import pandas as pd
 import torch
 import torch.nn as nn
 import torch.optim as optim
-import yaml
-from sklearn.preprocessing import OneHotEncoder
-from torch.nn.utils.rnn import pad_sequence
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
@@ -47,8 +44,6 @@ def train(args):
 
     # Save run settings
     logging.info(args)
-    with open(os.path.join(args.save_dir, 'args.yaml'), 'w') as f:
-        yaml.dump(vars(args), f, sort_keys=False)
 
     # Save python code
     zipf = zipfile.ZipFile(os.path.join(args.save_dir, 'code.zip'), 'w', zipfile.ZIP_DEFLATED)
