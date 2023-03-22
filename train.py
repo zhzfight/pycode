@@ -107,7 +107,7 @@ def train(args):
                 lp[a:] = poi_ids[b + 1:]
                 lc[a:] = cat_ids[b + 1:]
 
-                target_Interval = [(x - y).total_seconds() for x, y in zip(date_time[1:], date_time[:-1])]
+                target_Interval = [int((x - y).total_seconds()) for x, y in zip(date_time[1:], date_time[:-1])]
                 lti[a:] = target_Interval[b:]
 
                 self.input_seqlens.append(min(seqlen,max_len))
@@ -171,7 +171,7 @@ def train(args):
                 lp[a:] = poi_ids[b + 1:]
                 lc[a:] = cat_ids[b + 1:]
 
-                target_Interval = [(x - y).total_seconds() for x, y in zip(date_time[1:], date_time[:-1])]
+                target_Interval = [int((x - y).total_seconds()) for x, y in zip(date_time[1:], date_time[:-1])]
                 lti[a:] = target_Interval[b:]
 
                 self.input_seqlens.append(min(seqlen,max_len))
@@ -411,7 +411,7 @@ def train(args):
             y_cat=torch.LongTensor(label_seqs_cat).to(args.device)
 
             y_pred_poi, y_pred_cat = seq_model(seqs,   label_timeIntervals,time_masks,timeMatrixs)
-
+            print(y_poi.shape,y_cat.shape,y_pred_poi.shape,y_pred_cat.shape)
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
             loss_cat = criterion_cat(y_pred_cat.transpose(1, 2), y_cat)
 

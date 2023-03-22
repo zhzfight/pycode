@@ -166,8 +166,8 @@ class TransformerModel(nn.Module):
         self.forward_layernorms = torch.nn.ModuleList()
         self.forward_layers = torch.nn.ModuleList()
         self.last_layernorm = torch.nn.LayerNorm(hidden_dim, eps=1e-8)
-        self.decoder_poi=torch.nn.Linear(hidden_dim, num_poi)
-        self.decoder_cat=torch.nn.Linear(hidden_dim, num_cat)
+        self.decoder_poi=torch.nn.Linear(hidden_dim, num_poi+1)
+        self.decoder_cat=torch.nn.Linear(hidden_dim, num_cat+1)
         self.first_fwd_layer=torch.nn.Linear(input_dim,hidden_dim)
 
         for _ in range(nlayers):
@@ -211,11 +211,11 @@ class CAPE(nn.Module):
     def __init__(self,  poi_num,poi_embed_dim,cat_num,cat_embed_dim,dev ):
         super(CAPE, self).__init__()
         # Embedding Matrix
-        self.poi_num=poi_num
-        self.cat_num=cat_num
+        self.poi_num=poi_num+1
+        self.cat_num=cat_num+1
         self.dev=dev
-        self.poi_embedding_out = nn.Embedding(poi_num, poi_embed_dim,padding_idx=0)
-        self.cat_embedding_out = nn.Embedding(cat_num, cat_embed_dim,padding_idx=0)
+        self.poi_embedding_out = nn.Embedding(self.poi_num, poi_embed_dim,padding_idx=0)
+        self.cat_embedding_out = nn.Embedding(self.cat_num, cat_embed_dim,padding_idx=0)
         # FF Layer
         self.ff = nn.Linear(poi_embed_dim+cat_embed_dim, cat_embed_dim)
 
