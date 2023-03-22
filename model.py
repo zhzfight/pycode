@@ -59,13 +59,13 @@ class FuseEmbeddings(nn.Module):
 
 
 class TimeIntervalEmbeddings(nn.Module):
-    def __init__(self,dim,tu,tl):
+    def __init__(self,dim,tu,tl,dev):
         super(TimeIntervalEmbeddings,self).__init__()
         self.dim=dim
         self.emb_tu = torch.nn.Embedding(2, dim, padding_idx=0)
         self.emb_tl = torch.nn.Embedding(2, dim, padding_idx=0)
-        self.tu=torch.LongTensor([tu])
-        self.tl=torch.LongTensor([tl])
+        self.tu=torch.LongTensor([tu]).to(device=dev)
+        self.tl=torch.LongTensor([tl]).to(device=dev)
     def forward(self,delta_t,traj_len,max_len):
         mask = torch.zeros_like(delta_t, dtype=torch.long)
         for i in range(mask.shape[0]):

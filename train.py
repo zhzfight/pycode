@@ -65,7 +65,7 @@ def train(args):
         matrix = [[0] * max_len] * max_len
         for i in range(len(date_time)):
             for j in range(len(date_time)):
-                matrix[i][j + a] = abs((date_time[i] - date_time[j]).total_seconds())
+                matrix[i][j + a] = abs(int((date_time[i] - date_time[j]).total_seconds()))
         return matrix
 
     class TrajectoryDatasetTrain(Dataset):
@@ -283,7 +283,7 @@ def train(args):
 
     # %% Model4: Category embedding model
     cat_embed_model = CategoryEmbeddings(num_cats, args.cat_embed_dim)
-    timeInterval_embed_model = TimeIntervalEmbeddings(args.transformer_hidden_dim,args.tu,args.tl)
+    timeInterval_embed_model = TimeIntervalEmbeddings(args.transformer_hidden_dim,args.tu,args.tl,args.device)
     # %% Model5: Embedding fusion models
     embed_fuse_model1 = FuseEmbeddings(args.user_embed_dim, args.poi_embed_dim)
     embed_fuse_model2 = FuseEmbeddings(args.time_embed_dim, args.cat_embed_dim)
@@ -341,6 +341,7 @@ def train(args):
         return up_ct,timeMatrixs,label_timeInterval
 
     # %% ====================== Train ======================
+    timeInterval_embed_model=timeInterval_embed_model.to(device=args.device)
     poi_embed_model = poi_embed_model.to(device=args.device)
     user_embed_model = user_embed_model.to(device=args.device)
     time_embed_model = time_embed_model.to(device=args.device)
@@ -411,7 +412,7 @@ def train(args):
             y_cat=torch.LongTensor(label_seqs_cat).to(args.device)
 
             y_pred_poi, y_pred_cat = seq_model(seqs,   label_timeIntervals,time_masks,timeMatrixs)
-            print(y_poi.shape,y_cat.shape,y_pred_poi.shape,y_pred_cat.shape)
+
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
             loss_cat = criterion_cat(y_pred_cat.transpose(1, 2), y_cat)
 
@@ -468,7 +469,7 @@ def train(args):
             input_poi=poi_embed_model(input_poi)
             input_target=cat_embed_model(input_target)
             # Optimizer Initialize
-            positive, negative = word2vec.content(input_poi, input_target, input_context, 2)
+            positive, negative = word2vec.cat(input_poi, input_target, input_context, 2)
             loss = -1 * args.ALPHA * (criterion(positive) + criterion(negative).mean()).sum()
             optimizer.zero_grad()
             loss.backward(retain_graph=True)
