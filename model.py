@@ -183,32 +183,17 @@ class Time2Vec(nn.Module):
         return x
 
 
-class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, dropout=0.1, max_len=500):
-        super(PositionalEncoding, self).__init__()
-        self.dropout = nn.Dropout(p=dropout)
-
-        pe = torch.zeros(max_len, d_model)
-        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
-        pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)
-        pe = pe.unsqueeze(0).transpose(0, 1)
-        self.register_buffer('pe', pe)
-
-    def forward(self, x):
-        x = x + self.pe[:x.size(0), :]
-        return self.dropout(x)
 
 
-class TransformerModel(nn.Module):
-    def __init__(self, num_poi, num_cat, embed_size, nhead, nhid, nlayers, dropout=0.5):
-        super(TransformerModel, self).__init__()
-        from torch.nn import TransformerEncoder, TransformerEncoderLayer
-        self.model_type = 'Transformer'
-        self.pos_encoder = PositionalEncoding(embed_size, dropout)
-        encoder_layers = TransformerEncoderLayer(embed_size, nhead, nhid, dropout)
-        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+
+class GRUModel(nn.Module):
+    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid):
+        super(GRUModel, self).__init__()
+        from torch.nn import GRU
+        self.grucell = nn.GRUCell(embed_size, nhid)
+        self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid))
+        self.out_linear = nn.Linear(nhid, embed_size)
+        self.node_attn_model=NodeAttnMap(in_features=node_attn_in_features, nhid=node_attn_nhid, use_mask=False)
         # self.encoder = nn.Embedding(num_poi, embed_size)
         self.embed_size = embed_size
         self.decoder_poi = nn.Linear(embed_size, num_poi)
@@ -216,21 +201,49 @@ class TransformerModel(nn.Module):
         self.decoder_cat = nn.Linear(embed_size, num_cat)
         self.init_weights()
 
-    def generate_square_subsequent_mask(self, sz):
-        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
-        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
-        return mask
+
+
 
     def init_weights(self):
         initrange = 0.1
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src, src_mask):
-        src = src * math.sqrt(self.embed_size)
-        src = self.pos_encoder(src)
-        x = self.transformer_encoder(src, src_mask)
-        out_poi = self.decoder_poi(x)
-        out_time = self.decoder_time(x)
-        out_cat = self.decoder_cat(x)
+    def forward(self, src,batch_seq_lens,batch_input_seqs, X,A):
+        hid = self.h0.repeat(src.shape[0], 1)
+        x = []
+        for i in range(src.shape[1]):  # 遍历输入序列的每个时间步
+            hid = self.grucell(src[:, i, :], hid)  # 调用GRUCell的forward方法，更新隐藏层状态
+            x.append(hid)  # 将隐藏层状态添加到输出序列中
+        x = torch.stack(x, dim=1)
+
+        y=torch.zeros([x.shape[0],x.shape[1],x.shape[1],x.shape[2]])
+        for i in range(src.shape[1]-1):
+            tmp=[]
+            for j in range(i+1,src.shape[1]):
+                tmp.append(self.grucell(src[:,j,:],x[:,i,:]))
+            tmp=torch.stack(tmp,dim=1)
+            y[:,i,i+1:,:]=tmp
+
+        y=torch.transpose(y,1,2)
+
+        attns=torch.full((src.shape[0],src.shape[1],src.shape[1]), -1e9)
+        attn_map = self.node_attn_model(X, A)
+        # attn caculate
+        for i in range(len(batch_seq_lens)):
+            traj_i_input=batch_input_seqs[i]
+            for j in range(len(traj_i_input)-1):
+                for k in range(j+1,len(traj_i_input)):
+                    attns[i,j,k]=attn_map[traj_i_input[j],traj_i_input[k]]
+
+        attns=torch.transpose(attns,1,2)
+        attns=torch.nn.functional.softmax(attns,dim=2)
+
+        y = torch.sum(torch.mul(y, attns.unsqueeze(-1).repeat(1, 1, 1, y.shape[3])),dim=1)
+        y[:,0,:]=x[:,0,:]
+
+        y = self.out_linear(y)
+        out_poi = self.decoder_poi(y)
+        out_time = self.decoder_time(y)
+        out_cat = self.decoder_cat(y)
         return out_poi, out_time, out_cat

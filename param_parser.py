@@ -66,22 +66,11 @@ def parameter_parser():
                         type=list,
                         default=[32, 64],
                         help='List of hidden dims for gcn layers')
-    parser.add_argument('--transformer-nhid',
+    parser.add_argument('--seqmodel-nhid',
                         type=int,
                         default=1024,
                         help='Hid dim in TransformerEncoder')
-    parser.add_argument('--transformer-nlayers',
-                        type=int,
-                        default=2,
-                        help='Num of TransformerEncoderLayer')
-    parser.add_argument('--transformer-nhead',
-                        type=int,
-                        default=2,
-                        help='Num of heads in multiheadattention')
-    parser.add_argument('--transformer-dropout',
-                        type=float,
-                        default=0.3,
-                        help='Dropout rate for transformer')
+
     parser.add_argument('--time-embed-dim',
                         type=int,
                         default=32,
