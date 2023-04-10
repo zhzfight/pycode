@@ -187,18 +187,18 @@ class Time2Vec(nn.Module):
 
 
 class GRUModel(nn.Module):
-    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid):
+    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid,device):
         super(GRUModel, self).__init__()
         from torch.nn import GRU
         self.grucell = nn.GRUCell(embed_size, nhid)
         self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid))
-        self.out_linear = nn.Linear(nhid, embed_size)
         self.node_attn_model=NodeAttnMap(in_features=node_attn_in_features, nhid=node_attn_nhid, use_mask=False)
+        self.device=device
         # self.encoder = nn.Embedding(num_poi, embed_size)
         self.embed_size = embed_size
-        self.decoder_poi = nn.Linear(embed_size, num_poi)
-        self.decoder_time = nn.Linear(embed_size, 1)
-        self.decoder_cat = nn.Linear(embed_size, num_cat)
+        self.decoder_poi = nn.Linear(nhid, num_poi)
+        self.decoder_time = nn.Linear(nhid, 1)
+        self.decoder_cat = nn.Linear(nhid, num_cat)
         self.init_weights()
 
 
@@ -225,7 +225,7 @@ class GRUModel(nn.Module):
             tmp=torch.stack(tmp,dim=1)
             y[:,i,i+1:,:]=tmp
 
-        y=torch.transpose(y,1,2)
+        y=torch.transpose(y,1,2).to(self.device)
 
         attns=torch.full((src.shape[0],src.shape[1],src.shape[1]), -1e9)
         attn_map = self.node_attn_model(X, A)
@@ -236,13 +236,12 @@ class GRUModel(nn.Module):
                 for k in range(j+1,len(traj_i_input)):
                     attns[i,j,k]=attn_map[traj_i_input[j],traj_i_input[k]]
 
-        attns=torch.transpose(attns,1,2)
+        attns=torch.transpose(attns,1,2).to(self.device)
         attns=torch.nn.functional.softmax(attns,dim=2)
 
         y = torch.sum(torch.mul(y, attns.unsqueeze(-1).repeat(1, 1, 1, y.shape[3])),dim=1)
         y[:,0,:]=x[:,0,:]
 
-        y = self.out_linear(y)
         out_poi = self.decoder_poi(y)
         out_time = self.decoder_time(y)
         out_cat = self.decoder_cat(y)
