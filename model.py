@@ -215,9 +215,9 @@ class GRUModel(nn.Module):
         for i in range(src.shape[1]):  # 遍历输入序列的每个时间步
             hid = self.grucell(src[:, i, :], hid)  # 调用GRUCell的forward方法，更新隐藏层状态
             x.append(hid)  # 将隐藏层状态添加到输出序列中
-        x = torch.stack(x, dim=1)
+        x = torch.stack(x, dim=1).to(self.device)
 
-        y=torch.zeros([x.shape[0],x.shape[1],x.shape[1],x.shape[2]])
+        y=torch.zeros([x.shape[0],x.shape[1],x.shape[1],x.shape[2]]).to(self.device)
         for i in range(src.shape[1]-1):
             tmp=[]
             for j in range(i+1,src.shape[1]):
@@ -239,7 +239,7 @@ class GRUModel(nn.Module):
         attns=torch.transpose(attns,1,2).to(self.device)
         attns=torch.nn.functional.softmax(attns,dim=2)
 
-        y = torch.sum(torch.mul(y, attns.unsqueeze(-1).repeat(1, 1, 1, y.shape[3])),dim=1)
+        y = torch.sum(torch.mul(y, attns.unsqueeze(-1).repeat(1, 1, 1, y.shape[3])),dim=1).to(self.device)
         y[:,0,:]=x[:,0,:]
 
         out_poi = self.decoder_poi(y)
