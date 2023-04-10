@@ -191,7 +191,7 @@ class GRUModel(nn.Module):
         super(GRUModel, self).__init__()
         from torch.nn import GRU
         self.grucell = nn.GRUCell(embed_size, nhid)
-        self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid))
+        self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid)).to(device)
         self.node_attn_model=NodeAttnMap(in_features=node_attn_in_features, nhid=node_attn_nhid, use_mask=False)
         self.device=device
         # self.encoder = nn.Embedding(num_poi, embed_size)
@@ -210,7 +210,7 @@ class GRUModel(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src,batch_seq_lens,batch_input_seqs, X,A):
-        hid = self.h0.repeat(src.shape[0], 1)
+        hid = self.h0.repeat(src.shape[0], 1).to(self.device)
         x = []
         for i in range(src.shape[1]):  # 遍历输入序列的每个时间步
             hid = self.grucell(src[:, i, :], hid)  # 调用GRUCell的forward方法，更新隐藏层状态
