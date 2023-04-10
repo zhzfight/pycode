@@ -250,7 +250,8 @@ def train(args):
                          nhid=args.seqmodel_nhid,
                          batch_size=args.batch,
                          node_attn_in_features=X.shape[1],
-                         node_attn_nhid=args.node_attn_nhid)
+                         node_attn_nhid=args.node_attn_nhid,
+                         device=args.device)
 
     # Define overall loss and optimizer
     optimizer = optim.Adam(params=list(poi_embed_model.parameters()) +
