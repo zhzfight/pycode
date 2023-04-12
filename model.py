@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import numpy as np
 from torch.nn import Parameter
 
 
@@ -194,6 +195,8 @@ class GRUModel(nn.Module):
         self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid)).to(device)
         self.node_attn_model=NodeAttnMap(in_features=node_attn_in_features, nhid=node_attn_nhid, use_mask=False)
         self.device=device
+        self.nhid=nhid
+        self.batch_size=batch_size
         # self.encoder = nn.Embedding(num_poi, embed_size)
         self.embed_size = embed_size
         self.decoder_poi = nn.Linear(nhid, num_poi)
@@ -210,39 +213,39 @@ class GRUModel(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src,batch_seq_lens,batch_input_seqs, X,A):
-        hid = self.h0.repeat(src.shape[0], 1).to(self.device)
-        x = []
-        for i in range(src.shape[1]):  # 遍历输入序列的每个时间步
-            hid = self.grucell(src[:, i, :], hid)  # 调用GRUCell的forward方法，更新隐藏层状态
-            x.append(hid)  # 将隐藏层状态添加到输出序列中
-        x = torch.stack(x, dim=1).to(self.device)
-
-        y=torch.zeros([x.shape[0],x.shape[1],x.shape[1],x.shape[2]]).to(self.device)
-        for i in range(src.shape[1]-1):
-            tmp=[]
-            for j in range(i+1,src.shape[1]):
-                tmp.append(self.grucell(src[:,j,:],x[:,i,:]))
-            tmp=torch.stack(tmp,dim=1)
-            y[:,i,i+1:,:]=tmp
-
-        y=torch.transpose(y,1,2).to(self.device)
-
-        attns=torch.full((src.shape[0],src.shape[1],src.shape[1]), -1e9)
+        attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9)
         attn_map = self.node_attn_model(X, A)
         # attn caculate
         for i in range(len(batch_seq_lens)):
-            traj_i_input=batch_input_seqs[i]
-            for j in range(len(traj_i_input)-1):
-                for k in range(j+1,len(traj_i_input)):
-                    attns[i,j,k]=attn_map[traj_i_input[j],traj_i_input[k]]
+            traj_i_input = batch_input_seqs[i]
+            for j in range(1,len(traj_i_input)):
+                for k in range( j):
+                    attns[i, j,k] = attn_map[traj_i_input[k], traj_i_input[j]]
+        v0,indices=torch.max(attns,dim=-1)
+        v1=torch.zeros((src.shape[0],src.shape[1]))
+        for i in range(len(batch_seq_lens)):
+            for j in range(1,batch_seq_lens[i]):
+                v1[i][j]=attns[i][j][j-1]
 
-        attns=torch.transpose(attns,1,2).to(self.device)
-        attns=torch.nn.functional.softmax(attns,dim=2)
+        v= torch.stack([v0, v1], dim=-1)
+        v = torch.nn.functional.softmax(v, dim=-1)
 
-        y = torch.sum(torch.mul(y, attns.unsqueeze(-1).repeat(1, 1, 1, y.shape[3])),dim=1).to(self.device)
-        y[:,0,:]=x[:,0,:]
 
-        out_poi = self.decoder_poi(y)
-        out_time = self.decoder_time(y)
-        out_cat = self.decoder_cat(y)
+        hid = self.h0.repeat(self.batch_size, 1).to(self.device)
+        x = torch.zeros((self.batch_size,src.shape[1],self.nhid))
+        hid = self.grucell(src[:,0,:],hid)
+        x[:,0,:]=hid
+        for i in range(1,src.shape[1]):
+            hid1 = self.grucell(src[:, i, :], hid)
+
+            hid2 = self.grucell(src[:,i,:],x[np.arange(x.shape[0]), indices[:, i]])
+            alpha1=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
+            alpha2=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
+            hid = torch.mul(alpha1,hid1)+torch.mul(alpha2,hid2)
+            x[:,i,:]=hid
+
+
+        out_poi = self.decoder_poi(x)
+        out_time = self.decoder_time(x)
+        out_cat = self.decoder_cat(x)
         return out_poi, out_time, out_cat
