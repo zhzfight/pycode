@@ -213,7 +213,7 @@ class GRUModel(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src,batch_seq_lens,batch_input_seqs, X,A):
-        attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9)
+        attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9).to(self.device)
         attn_map = self.node_attn_model(X, A)
         # attn caculate
         for i in range(len(batch_seq_lens)):
@@ -222,7 +222,7 @@ class GRUModel(nn.Module):
                 for k in range( j):
                     attns[i, j,k] = attn_map[traj_i_input[k], traj_i_input[j]]
         v0,indices=torch.max(attns,dim=-1)
-        v1=torch.zeros((src.shape[0],src.shape[1]))
+        v1=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
         for i in range(len(batch_seq_lens)):
             for j in range(1,batch_seq_lens[i]):
                 v1[i][j]=attns[i][j][j-1]
@@ -231,8 +231,8 @@ class GRUModel(nn.Module):
         v = torch.nn.functional.softmax(v, dim=-1)
 
 
-        hid = self.h0.repeat(self.batch_size, 1).to(self.device)
-        x = torch.zeros((self.batch_size,src.shape[1],self.nhid))
+        hid = self.h0.repeat(src.shape[0], 1).to(self.device)
+        x = torch.zeros((src.shape[0],src.shape[1],self.nhid)).to(self.device)
         hid = self.grucell(src[:,0,:],hid)
         x[:,0,:]=hid
         for i in range(1,src.shape[1]):
