@@ -58,6 +58,10 @@ def parameter_parser():
                         type=int,
                         default=128,
                         help='User embedding dimensions')
+    parser.add_argument('--gru-dropout',
+                        type=float,
+                        default=0.1,
+                        help='Dropout rate for gru')
     parser.add_argument('--gcn-dropout',
                         type=float,
                         default=0.3,

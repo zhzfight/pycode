@@ -188,9 +188,10 @@ class Time2Vec(nn.Module):
 
 
 class GRUModel(nn.Module):
-    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid,device):
+    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid,device,dropout):
         super(GRUModel, self).__init__()
         from torch.nn import GRU
+        self.dropout=nn.Dropout(dropout)
         self.grucell = nn.GRUCell(embed_size, nhid)
         self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid)).to(device)
         self.node_attn_model=NodeAttnMap(in_features=node_attn_in_features, nhid=node_attn_nhid, use_mask=False)
@@ -242,6 +243,7 @@ class GRUModel(nn.Module):
             alpha1=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
             alpha2=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
             hid = torch.mul(alpha1,hid1)+torch.mul(alpha2,hid2)
+            hid=self.dropout(hid)
             x[:,i,:]=hid
 
 

@@ -251,7 +251,8 @@ def train(args):
                          batch_size=args.batch,
                          node_attn_in_features=X.shape[1],
                          node_attn_nhid=args.node_attn_nhid,
-                         device=args.device)
+                         device=args.device,
+                         dropout=args.gru_dropout)
 
     # Define overall loss and optimizer
     optimizer = optim.Adam(params=list(poi_embed_model.parameters()) +
