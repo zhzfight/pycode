@@ -224,18 +224,35 @@ class GRUModel(nn.Module):
 
         hid = self.h0.repeat(src.shape[0], 1).to(self.device)
         x = torch.zeros((src.shape[0],src.shape[1],self.nhid)).to(self.device)
+        for i in range(src.shape[0]):
+            hid=self.grucell(src[:,i,:],hid)
+            x[:,i,:]=hid
+        y = torch.zeros((src.shape[0],src.shape[1],self.nhid)).to(self.device)
+        y[:,0,:]=x[:,0,:]
+        y[:,1,:]=x[:,1,:]
+        for i in range(2,src.shape[1]):
+            tmp = torch.zeros((src.shape[0], i, self.nhid)).to(self.device)
+            for j in range(i):
+                tmp[:,j,:]=self.grucell(src[:,i,:],x[:,j,:])
+            attns_i = torch.nn.functional.softmax(attns[:, i, :i], dim=-1).unsqueeze(-1).repeat(1, 1, self.nhid)
+            y[:, i, :] = torch.sum(torch.mul(attns_i, tmp), dim=1)
+        out_poi = self.decoder_poi(y)
+        out_time = self.decoder_time(y)
+        out_cat = self.decoder_cat(y)
+
+        '''
         hid = self.grucell(src[:,0,:],hid)
         x[:,0,:]=hid
         for i in range(1,src.shape[1]):
             tmp=torch.zeros((src.shape[0],i,self.nhid)).to(self.device)
             for j in range(i):
-                hidj=self.grucell(src[:,i,:],x[:,j,:])
-                tmp[:,j,:]=hidj
+                tmp[:,j,:]=self.grucell(src[:,i,:],x[:,j,:])
             attns_i=torch.nn.functional.softmax(attns[:,i,:i],dim=-1).unsqueeze(-1).repeat(1,1,self.nhid)
             x[:,i,:]=torch.sum(torch.mul(attns_i,tmp),dim=1)
-
+        
 
         out_poi = self.decoder_poi(x)
         out_time = self.decoder_time(x)
         out_cat = self.decoder_cat(x)
+        '''
         return out_poi, out_time, out_cat
