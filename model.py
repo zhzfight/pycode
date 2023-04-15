@@ -238,9 +238,9 @@ class GRUModel(nn.Module):
         x[:,0,:]=hid
         for i in range(1,src.shape[1]):
             hid1 = self.grucell(src[:, i, :], hid)
-            hid1=self.dropout(hid1)
+
             hid2 = self.grucell(src[:,i,:],x[np.arange(x.shape[0]), indices[:, i]])
-            hid2=self.dropout(hid2)
+
             alpha1=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
             alpha2=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
             hid = torch.mul(alpha1,hid1)+torch.mul(alpha2,hid2)
