@@ -580,12 +580,15 @@ def train(args):
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
             y_time = label_padded_time.to(device=args.device, dtype=torch.float)
             y_cat = label_padded_cat.to(device=args.device, dtype=torch.long)
+
             label_padded_context = pad_sequence(batch_seq_labels_context, batch_first=True, padding_value=0)
+
+            y_context = label_padded_context.to(device=args.device, dtype=torch.float)
 
             mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(
                 batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
 
-            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x, src_mask)
+            y_pred_poi, y_pred_time, y_pred_cat,y_pred_context  = seq_model(x, src_mask)
 
 
             # Calculate loss
