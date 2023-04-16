@@ -231,7 +231,7 @@ class GraphSage(nn.Module):
         self.id2node = nn.Embedding(num_node, feature_dim)
 
         self.layer1 = SageLayer(self.id2node, adj,  feature_dim, embed_dim,device)
-        self.layer12 = SageLayer(lambda nodes: self.layer12(nodes).t(), adj,  embed_dim, embed_dim,device)
+        self.layer12 = SageLayer(lambda nodes: self.layer1(nodes).t(), adj,  embed_dim, embed_dim,device)
 
 
     def forward(self, nodes):
