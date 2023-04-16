@@ -4,93 +4,22 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import Parameter
+from torch.nn import init
+from torch.autograd import Variable
+import random
+import numpy as np
+seed = 0
+random.seed(seed)
+np.random.seed(seed)
+torch.manual_seed(seed)
 
-
-class NodeAttnMap(nn.Module):
-    def __init__(self, in_features, nhid, use_mask=False):
-        super(NodeAttnMap, self).__init__()
-        self.use_mask = use_mask
-        self.out_features = nhid
-        self.W = nn.Parameter(torch.empty(size=(in_features, nhid)))
-        nn.init.xavier_uniform_(self.W.data, gain=1.414)
-        self.a = nn.Parameter(torch.empty(size=(2 * nhid, 1)))
-        nn.init.xavier_uniform_(self.a.data, gain=1.414)
-        self.leakyrelu = nn.LeakyReLU(0.2)
-
-    def forward(self, X, A):
-        Wh = torch.mm(X, self.W)
-
-        e = self._prepare_attentional_mechanism_input(Wh)
-
-        if self.use_mask:
-            e = torch.where(A > 0, e, torch.zeros_like(e))  # mask
-
-        A = A + 1  # shift from 0-1 to 1-2
-        e = e * A
-
-        return e
-
-    def _prepare_attentional_mechanism_input(self, Wh):
-        Wh1 = torch.matmul(Wh, self.a[:self.out_features, :])
-        Wh2 = torch.matmul(Wh, self.a[self.out_features:, :])
-        e = Wh1 + Wh2.T
-        return self.leakyrelu(e)
-
-
-class GraphConvolution(nn.Module):
-    def __init__(self, in_features, out_features, bias=True):
-        super(GraphConvolution, self).__init__()
-        self.in_features = in_features
-        self.out_features = out_features
-        self.weight = Parameter(torch.FloatTensor(in_features, out_features))
-        if bias:
-            self.bias = Parameter(torch.FloatTensor(out_features))
-        else:
-            self.register_parameter('bias', None)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        stdv = 1. / math.sqrt(self.weight.size(1))
-        self.weight.data.uniform_(-stdv, stdv)
-        if self.bias is not None:
-            self.bias.data.uniform_(-stdv, stdv)
-
-    def forward(self, input, adj):
-        support = torch.mm(input, self.weight)
-        output = torch.spmm(adj, support)
-        if self.bias is not None:
-            return output + self.bias
-        else:
-            return output
-
-    def __repr__(self):
-        return self.__class__.__name__ + ' (' \
-               + str(self.in_features) + ' -> ' \
-               + str(self.out_features) + ')'
-
-
-class GCN(nn.Module):
-    def __init__(self, ninput, nhid, noutput, dropout):
-        super(GCN, self).__init__()
-
-        self.gcn = nn.ModuleList()
-        self.dropout = dropout
-        self.leaky_relu = nn.LeakyReLU(0.2)
-
-        channels = [ninput] + nhid + [noutput]
-        for i in range(len(channels) - 1):
-            gcn_layer = GraphConvolution(channels[i], channels[i + 1])
-            self.gcn.append(gcn_layer)
-
-    def forward(self, x, adj):
-        for i in range(len(self.gcn) - 1):
-            x = self.leaky_relu(self.gcn[i](x, adj))
-
-        x = F.dropout(x, self.dropout, training=self.training)
-        x = self.gcn[-1](x, adj)
-
-        return x
-
+class PoiEmbeddings(nn.Module):
+    def __init__(self,num_pois,embedding_dim):
+        super(PoiEmbeddings,self).__init__()
+        self.poi_embedding=nn.Embedding(num_embeddings=num_pois,embedding_dim=embedding_dim)
+    def forward(self,poi_idx):
+        embed=self.poi_embedding(poi_idx)
+        return embed
 
 class UserEmbeddings(nn.Module):
     def __init__(self, num_users, embedding_dim):
@@ -201,6 +130,114 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
+class SpaAggregator(nn.Module):
+    """
+    Aggregates a node's embeddings using mean of neighbors' embeddings and transform
+    """
+    def __init__(self, id2feat,  device):
+        """
+        features -- function mapping LongTensor of node ids to FloatTensor of feature values.
+        cuda -- whether to use GPU
+        """
+        super(SpaAggregator, self).__init__()
+
+        self.id2feat = id2feat
+        self.device=device
+
+
+    def forward(self, nodes, adj_list, num_sample):
+        """
+        nodes --- list of nodes in a batch
+        dis --- shape alike adj
+        to_neighs --- list of sets, each set is the set of neighbors for node in batch
+        num_sample --- number of neighbors to sample. No sampling if None.
+        """
+        _set = set  # a disordered non-repeatable list
+        to_neighs=[list(adj.keys()) for adj in adj_list]
+        # sample neighbors
+        if num_sample is not None:
+            _sample = random.sample
+            samp_neighs = []
+            for i, to_neigh in enumerate(to_neighs):
+                if len(to_neigh) >= num_sample:
+                    samp_neighs.append(_set(_sample(to_neigh, num_sample)))
+                elif len(to_neigh) == 0:  # no neigh
+                    # print(to_neigh)
+                    samp_neighs.append({nodes[i]})
+                else:
+                    samp_neighs.append(_set(to_neigh))
+            # samp_neighs = [_set(_sample(to_neigh, num_sample)) if len(to_neigh) >= num_sample
+            #                else _set(to_neigh) for to_neigh in to_neighs]
+        else:
+            samp_neighs = to_neighs
+
+        # ignore the unlinked nodes
+        unique_nodes_list = list(set.union(*samp_neighs))
+        unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
+        mask = Variable(torch.zeros(len(samp_neighs), len(unique_nodes))).to(self.device)
+        column_indices = [unique_nodes[n] for samp_neigh in samp_neighs for n in samp_neigh]
+        row_indices = [i for i in range(len(samp_neighs)) for j in range(len(samp_neighs[i]))]
+
+        adj_weight=torch.tensor([adj_list[i][n] for i,samp_neigh in enumerate( samp_neighs) for n in samp_neigh]).to(self.device)
+        mask[row_indices, column_indices] = adj_weight  # can be replaced by distance
+        # print(torch.sum(torch.isnan(mask)))
+        num_neigh = mask.sum(1, keepdim=True)
+        mask = mask.div(num_neigh)
+        # spatial_transition = Variable(torch.FloatTensor(len(samp_neighs), len(unique_nodes)))
+        # print(unique_nodes_list)
+        # pdb.set_trace()
+        embed_matrix = self.id2feat(torch.LongTensor(unique_nodes_list))  # （??, feat_dim)
+        to_feats = mask.mm(embed_matrix)  # (?, num_sample)
+        # print(torch.sum(torch.isnan(embed_matrix)))
+        return to_feats  # (?, feat_dim)
+
+
+class SageLayer(nn.Module):
+    """
+    Encodes a node's using 'convolutional' GraphSage approach
+    id2feat -- function mapping LongTensor of node ids to FloatTensor of feature values.
+    cuda -- whether to use GPU
+    gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
+    """
+    def __init__(self, id2feat, adj_list,  feature_dim, embed_dim, device):
+        super(SageLayer, self).__init__()
+
+        self.id2feat = id2feat
+        self.feat_dim = feature_dim
+        self.agg = SpaAggregator(id2feat,  device)
+        self.num_sample = feature_dim
+        self.device=device
+        self.adj_list = adj_list
+        self.weight = nn.Parameter(
+                torch.FloatTensor(embed_dim, 2 * self.feat_dim))
+        init.xavier_uniform_(self.weight)
+
+    def forward(self, nodes):
+        """
+        Generates embeddings for a batch of nodes.
+        nodes     -- list of nodes
+        """
+        neigh_feats = self.agg(nodes, [self.adj_list[int(node-1)] for node in nodes], self.num_sample)
+        self_feats = self.id2feat(torch.LongTensor(nodes))
+        combined = torch.cat((self_feats, neigh_feats), dim=1)  # (?, 2*feat_dim)
+        # print(combined.shape)
+        combined = F.relu(self.weight.mm(combined.t()))
+        # pdb.set_trace()
+        return combined
+
+class GraphSage(nn.Module):
+    def __init__(self, num_node, feature_dim, embed_dim, adj,  device):
+        super(GraphSage, self).__init__()
+        id2node = nn.Embedding(num_node, feature_dim)
+
+        layer1 = SageLayer(id2node, adj,  feature_dim, embed_dim,device)
+        layer12 = SageLayer(lambda nodes: layer1(nodes).t(), adj,  embed_dim, embed_dim,device)
+        self.transition = layer12
+
+    def forward(self, nodes):
+        neigh_embeds = self.transition(nodes).t()  # (?, emb)
+        return neigh_embeds
+
 class TransformerModel(nn.Module):
     def __init__(self, num_poi, num_cat, embed_size, nhead, nhid, nlayers, dropout=0.5):
         super(TransformerModel, self).__init__()
@@ -214,6 +251,7 @@ class TransformerModel(nn.Module):
         self.decoder_poi = nn.Linear(embed_size, num_poi)
         self.decoder_time = nn.Linear(embed_size, 1)
         self.decoder_cat = nn.Linear(embed_size, num_cat)
+        self.decoder_context=nn.Linear(embed_size,num_poi)
         self.init_weights()
 
     def generate_square_subsequent_mask(self, sz):
@@ -233,4 +271,8 @@ class TransformerModel(nn.Module):
         out_poi = self.decoder_poi(x)
         out_time = self.decoder_time(x)
         out_cat = self.decoder_cat(x)
-        return out_poi, out_time, out_cat
+        out_context=self.decoder_context(x)
+
+
+
+        return out_poi, out_time, out_cat,out_context

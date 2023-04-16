@@ -54,6 +54,18 @@ def parameter_parser():
                         type=int,
                         default=128,
                         help='POI embedding dimensions')
+    parser.add_argument('--sage-embed-dim',
+                        type=int,
+                        default=128,
+                        help='sage embedding dimensions')
+    parser.add_argument('--context-sample',
+                        type=int,
+                        default=4,
+                        help='context sample num')
+    parser.add_argument('--sage-num-feature',
+                        type=int,
+                        default=10,
+                        help='sage num feature')
     parser.add_argument('--user-embed-dim',
                         type=int,
                         default=128,
@@ -91,6 +103,10 @@ def parameter_parser():
                         default=32,
                         help='Category embedding dimensions')
     parser.add_argument('--time-loss-weight',
+                        type=int,
+                        default=10,
+                        help='Scale factor for the time loss term')
+    parser.add_argument('--context_loss-weight',
                         type=int,
                         default=10,
                         help='Scale factor for the time loss term')

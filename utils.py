@@ -8,6 +8,101 @@ import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 from scipy.sparse.linalg import eigsh
+import torch.nn.functional as F
+import random
+from geographiclib.geodesic import Geodesic
+geod = Geodesic.WGS84
+
+
+def label_context(label_seq,num_pois,nei,num_sample):
+    label_seq_context = []
+    for label in label_seq:
+        neighbors = nei[label]
+        if num_sample < len(neighbors):
+            label_seq_context.append(random.sample(neighbors, num_sample))
+        elif len(neighbors) == 0:
+            label_seq_context.append([label])
+        else:
+            label_seq_context.append(neighbors)
+    labels=[]
+    for l in label_seq_context:
+        labels.append(torch.tensor(l))
+
+    labels = [F.one_hot(label, num_classes=num_pois).sum(dim=0) for label in labels]
+    labels = torch.stack(labels, dim=0)
+    return labels
+
+
+# 定义一个函数，获取一个节点的直接相连的邻居列表
+def get_direct_neighbors(matrix,index):
+    neighbors = []
+    for i in range(len(matrix[index])):
+        if i==index:
+            continue
+        if matrix[index][i] >0:
+            neighbors.append(i)
+    return neighbors
+# 定义一个函数，获取一个节点的二阶相连并且类别相同的邻居列表
+def get_second_neighbors(matrix,index,nodes):
+    neighbors = []
+    direct_neighbors = get_direct_neighbors(matrix,index)
+    for n in direct_neighbors:
+        second_neighbors = get_direct_neighbors(matrix,n)
+        for s in second_neighbors:
+            if s != index and same_category(nodes[s],nodes[index]):
+                neighbors.append(s)
+    return neighbors
+
+# 定义一个函数，判断两个节点是否属于同一类别
+def same_category(node1,node2):
+    return node1[2] == node2[2]
+
+# 定义一个函数，判断两个节点之间的地理距离是否小于阈值
+def within_threshold(node1,node2):
+    g = geod.Inverse(node1[1], node1[0], node2[1], node2[0])
+    return g['s12']<=1000
+
+# 定义一个函数，获取一个节点的所有邻居列表
+def get_all_neighbors(matrix,index,nodes):
+    neighbors = []
+    direct_neighbors = get_direct_neighbors(matrix,index)
+    second_neighbors = get_second_neighbors(matrix,index,nodes)
+    for n in direct_neighbors + second_neighbors:
+        if n not in neighbors and within_threshold(nodes[n],nodes[index]):
+            neighbors.append(n)
+    return neighbors
+# 定义一个函数，获取所有节点的邻居列表
+def get_all_nodes_neighbors(matrix,nodes):
+    result = {}
+    for i in range(len(nodes)):
+        result[i] = get_all_neighbors(matrix,i,nodes)
+    return result
+
+def adj_list(raw_A,raw_X):
+    raw_A=np.copy(raw_A).astype(np.float32)
+    raw_X=np.copy(raw_X)
+    # 假设邻接矩阵是一个二维数组matrix
+    n = len(raw_A)  # 邻接矩阵的行数和列数
+    adj_list = [dict()] * n
+    # 如果要将有向图转换为无向图
+    for i in range(n):  # 遍历每一行
+        for j in range(i + 1, n):  # 遍历对角线上方的每一列
+            if raw_A[i][j] != raw_A[j][i]:  # 如果不对称
+                raw_A[i][j] += raw_A[j][i]  # 将上方和下方的元素相加
+                raw_A[j][i] = raw_A[i][j]  # 更新下方的元素
+    for i in range(n):
+        for j in range(n):
+            if i==j:
+                continue
+            if raw_A[i][j] > 0:
+                adj_list[i][j] = raw_A[i][j]
+
+    nodes = [tuple(row) for row in np.asarray(raw_X[:, [3,2,1]])]
+    nei_s =get_all_nodes_neighbors(raw_A,nodes)
+
+    return adj_list,nei_s
+
+
 
 
 def fit_delimiter(string='', length=80, delimiter="="):
