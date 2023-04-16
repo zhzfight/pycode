@@ -204,6 +204,7 @@ class GRUModel(nn.Module):
         self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.init_weights()
+        self.pos_embedding=torch.nn.Embedding(100, nhid)
 
 
 
@@ -238,8 +239,10 @@ class GRUModel(nn.Module):
         x[:,0,:]=hid
         for i in range(1,src.shape[1]):
             hid1 = self.grucell(src[:, i, :], hid)
+            hid1+=self.pos_embedding(torch.LongTensor([0])).repeat(src.shape[0],1)
 
             hid2 = self.grucell(src[:,i,:],x[np.arange(x.shape[0]), indices[:, i]])
+            hid2+=self.pos_embedding(i-indices[:, i])
 
             alpha1=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
             alpha2=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
