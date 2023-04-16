@@ -228,9 +228,9 @@ class SageLayer(nn.Module):
 class GraphSage(nn.Module):
     def __init__(self, num_node, feature_dim, embed_dim, adj,  device):
         super(GraphSage, self).__init__()
-        id2node = nn.Embedding(num_node, feature_dim)
+        self.id2node = nn.Embedding(num_node, feature_dim)
 
-        layer1 = SageLayer(id2node, adj,  feature_dim, embed_dim,device)
+        layer1 = SageLayer(self.id2node, adj,  feature_dim, embed_dim,device)
         layer12 = SageLayer(lambda nodes: layer1(nodes).t(), adj,  embed_dim, embed_dim,device)
         self.transition = layer12
 
