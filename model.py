@@ -230,12 +230,12 @@ class GraphSage(nn.Module):
         super(GraphSage, self).__init__()
         self.id2node = nn.Embedding(num_node, feature_dim)
 
-        layer1 = SageLayer(self.id2node, adj,  feature_dim, embed_dim,device)
-        layer12 = SageLayer(lambda nodes: layer1(nodes).t(), adj,  embed_dim, embed_dim,device)
-        self.transition = layer12
+        self.layer1 = SageLayer(self.id2node, adj,  feature_dim, embed_dim,device)
+        self.layer12 = SageLayer(lambda nodes: self.layer12(nodes).t(), adj,  embed_dim, embed_dim,device)
+
 
     def forward(self, nodes):
-        neigh_embeds = self.transition(nodes).t()  # (?, emb)
+        neigh_embeds = self.layer12(nodes).t()  # (?, emb)
         return neigh_embeds
 
 class TransformerModel(nn.Module):
