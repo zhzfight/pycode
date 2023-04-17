@@ -188,9 +188,10 @@ class Time2Vec(nn.Module):
 
 
 class GRUModel(nn.Module):
-    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid,device,dropout):
+    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid,device,dropout,tu):
         super(GRUModel, self).__init__()
         from torch.nn import GRU
+        self.time_embed_size=50
         self.dropout=nn.Dropout(dropout)
         self.grucell = nn.GRUCell(embed_size, nhid)
         self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid)).to(device)
@@ -204,8 +205,9 @@ class GRUModel(nn.Module):
         self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.init_weights()
-        self.pos_embedding=torch.nn.Embedding(100, nhid)
-
+        self.emb_tu = nn.Embedding(2, self.time_embed_size, padding_idx=0)
+        self.emb_tl = nn.Embedding(2, self.time_embed_size, padding_idx=0)
+        self.tu=tu
 
 
 
@@ -214,7 +216,7 @@ class GRUModel(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src,batch_seq_lens,batch_input_seqs, X,A):
+    def forward(self, src,batch_seq_lens,batch_input_seqs, X,A,batch_input_seqs_ts):
         attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9).to(self.device)
         attn_map = self.node_attn_model(X, A)
         # attn caculate
@@ -223,11 +225,28 @@ class GRUModel(nn.Module):
             for j in range(1,len(traj_i_input)):
                 for k in range( j):
                     attns[i, j,k] = attn_map[traj_i_input[k], traj_i_input[j]]
-        v0,indices=torch.max(attns,dim=-1)
-        v1=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
+
+        timeIntervals=torch.zeros((src.shape[0],src.shape[1],src.shape[1])).to(self.device)
         for i in range(len(batch_seq_lens)):
-            for j in range(1,batch_seq_lens[i]):
-                v1[i][j]=attns[i][j][j-1]
+            traj_i_ts_input = batch_input_seqs_ts[i]
+            for j in range(1,len(traj_i_ts_input)):
+                for k in range(j):
+                    timeIntervals[i,j,k]=traj_i_ts_input[j]-traj_i_ts_input[k]
+        mask = torch.where(timeIntervals != 0, torch.tensor(1), torch.tensor(0)).to(self.device)
+        etl=self.emb_tl(mask)
+        etu=self.emb_tu(mask)
+        vtl=timeIntervals.unsqueeze(-1).expand(-1, -1, -1, self.time_embed_size)
+        vtu=(self.tu - timeIntervals).unsqueeze(-1).expand(-1, -1, -1, self.time_embed_size)
+        time_interval = (etl * vtu + etu * vtl) /self.tu
+
+        v0,indices=torch.max(attns,dim=-1)
+        for i in range(1,src.shape[1]):
+            v0[:,i]+=torch.sum(time_interval[np.arange(src.shape[0]),i, indices[:,i]],dim=-1)
+
+        v1=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
+        for i in range(1, src.shape[1]):
+            v1[:,i]=attns[:,i,i-1]+torch.sum(time_interval[:,i,i-1,:],dim=-1)
+
 
         v= torch.stack([v0, v1], dim=-1)
         v = torch.nn.functional.softmax(v, dim=-1)
@@ -239,10 +258,8 @@ class GRUModel(nn.Module):
         x[:,0,:]=hid
         for i in range(1,src.shape[1]):
             hid1 = self.grucell(src[:, i, :], hid)
-            hid1+=self.pos_embedding(torch.LongTensor([0])).repeat(src.shape[0],1)
-
             hid2 = self.grucell(src[:,i,:],x[np.arange(x.shape[0]), indices[:, i]])
-            hid2+=self.pos_embedding(i-indices[:, i])
+
 
             alpha1=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
             alpha2=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
