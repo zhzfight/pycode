@@ -114,6 +114,7 @@ def train(args):
 
     # Print user-trajectories count
     traj_list = list(set(train_df['trajectory_id'].tolist()))
+    print('load adj_list')
     if os.path.exists(os.path.join(args.adj_path,'adj.pkl')):
         with open(os.path.join(args.adj_path,'adj.pkl'), 'rb') as f:  # 打开pickle文件
             adj = pickle.load(f)  # 读取字典
