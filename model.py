@@ -186,7 +186,7 @@ class SpaAggregator(nn.Module):
         # spatial_transition = Variable(torch.FloatTensor(len(samp_neighs), len(unique_nodes)))
         # print(unique_nodes_list)
         # pdb.set_trace()
-        embed_matrix = self.id2feat(torch.LongTensor(unique_nodes_list))  # （??, feat_dim)
+        embed_matrix = self.id2feat(torch.LongTensor(unique_nodes_list).to(self.device))  # （??, feat_dim)
         to_feats = mask.mm(embed_matrix)  # (?, num_sample)
         # print(torch.sum(torch.isnan(embed_matrix)))
         return to_feats  # (?, feat_dim)
@@ -199,9 +199,10 @@ class SageLayer(nn.Module):
     cuda -- whether to use GPU
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
-    def __init__(self, id2feat, adj_list,  feature_dim, embed_dim, device):
+    def __init__(self, id2feat, adj_list,  feature_dim, embed_dim, device,id):
         super(SageLayer, self).__init__()
-
+        print('init sage layer ',id)
+        self.id=id
         self.id2feat = id2feat
         self.feat_dim = feature_dim
         self.agg = SpaAggregator(id2feat,  device)
@@ -217,8 +218,9 @@ class SageLayer(nn.Module):
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
+        print('sage layer',self.id)
         neigh_feats = self.agg(nodes, [self.adj_list[int(node-1)] for node in nodes], self.num_sample)
-        self_feats = self.id2feat(torch.LongTensor(nodes))
+        self_feats = self.id2feat(torch.LongTensor(nodes).to(self.device))
         combined = torch.cat((self_feats, neigh_feats), dim=1)  # (?, 2*feat_dim)
         # print(combined.shape)
         combined = F.relu(self.weight.mm(combined.t()))
@@ -230,8 +232,8 @@ class GraphSage(nn.Module):
         super(GraphSage, self).__init__()
         self.id2node = nn.Embedding(num_node, feature_dim)
 
-        self.layer1 = SageLayer(self.id2node, adj,  feature_dim, embed_dim,device)
-        self.layer12 = SageLayer(lambda nodes: self.layer1(nodes).t(), adj,  embed_dim, embed_dim,device)
+        self.layer1 = SageLayer(self.id2node, adj,  feature_dim, embed_dim,device,1)
+        self.layer12 = SageLayer(lambda nodes: self.layer1(nodes).t(), adj,  embed_dim, embed_dim,device,2)
 
 
     def forward(self, nodes):

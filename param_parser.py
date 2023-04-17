@@ -102,6 +102,10 @@ def parameter_parser():
                         type=int,
                         default=32,
                         help='Category embedding dimensions')
+    parser.add_argument('--adj-path',
+                        type=str,
+                        default='./dataset',
+                        help='adj_list path')
     parser.add_argument('--time-loss-weight',
                         type=int,
                         default=10,

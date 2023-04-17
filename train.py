@@ -114,8 +114,17 @@ def train(args):
 
     # Print user-trajectories count
     traj_list = list(set(train_df['trajectory_id'].tolist()))
-
-    adj,nei=adj_list(raw_A,raw_X)
+    if os.path.exists(os.path.join(args.adj_path,'adj.pkl')):
+        with open(os.path.join(args.adj_path,'adj.pkl'), 'rb') as f:  # 打开pickle文件
+            adj = pickle.load(f)  # 读取字典
+        with open(os.path.join(args.adj_path,'nei.pkl'), 'rb') as f:  # 打开pickle文件
+            nei = pickle.load(f)  # 读取字典
+    else:
+        adj,nei=adj_list(raw_A,raw_X)
+        with open(os.path.join(args.adj_path,'adj.pkl'), 'wb') as f:
+            pickle.dump(adj, f)  # 把字典写入pickle文件
+        with open(os.path.join(args.adj_path,'nei.pkl'), 'wb') as f:
+            pickle.dump(nei, f)  # 把字典写入pickle文件
 
     # %% ====================== Define Dataset ======================
     class TrajectoryDatasetTrain(Dataset):
