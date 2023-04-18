@@ -151,6 +151,8 @@ def train(args):
 
                 if len(input_seq) < args.short_traj_thres:
                     continue
+                if len(set([each[0] for each in input_seq]))<2:
+                    continue
 
                 self.traj_seqs.append(traj_id)
                 self.input_seqs.append(input_seq)
@@ -199,6 +201,9 @@ def train(args):
 
                 # Ignore seq if too short
                 if len(input_seq) < args.short_traj_thres:
+                    continue
+                # ignore those poi without neighbor
+                if len(set([each[0] for each in input_seq])) < 2:
                     continue
 
                 self.input_seqs.append(input_seq)
@@ -420,7 +425,6 @@ def train(args):
                 label_seq = [each[0] for each in sample[2]]
                 label_seq_context=label_context(label_seq,num_pois,nei,args.context_sample_num)
 
-
                 input_seq_time = [each[1] for each in sample[1]]
                 label_seq_time = [each[1] for each in sample[2]]
                 label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
@@ -509,6 +513,7 @@ def train(args):
                              f'train_move_loss:{np.mean(train_batches_loss_list):.2f}\n'
                              f'train_move_poi_loss:{np.mean(train_batches_poi_loss_list):.2f}\n'
                              f'train_move_time_loss:{np.mean(train_batches_time_loss_list):.2f}\n'
+                             f'train_move_context_loss:{np.mean(train_batches_context_loss_list):.2f}\n'
                              f'train_move_top1_acc:{np.mean(train_batches_top1_acc_list):.4f}\n'
                              f'train_move_top5_acc:{np.mean(train_batches_top5_acc_list):.4f}\n'
                              f'train_move_top10_acc:{np.mean(train_batches_top10_acc_list):.4f}\n'
@@ -651,6 +656,7 @@ def train(args):
                              f'val_move_loss:{np.mean(val_batches_loss_list):.2f} \n'
                              f'val_move_poi_loss:{np.mean(val_batches_poi_loss_list):.2f} \n'
                              f'val_move_time_loss:{np.mean(val_batches_time_loss_list):.2f} \n'
+                             f'val_move_context_loss:{np.mean(val_batches_context_loss_list):.2f} \n'
                              f'val_move_top1_acc:{np.mean(val_batches_top1_acc_list):.4f} \n'
                              f'val_move_top5_acc:{np.mean(val_batches_top5_acc_list):.4f} \n'
                              f'val_move_top10_acc:{np.mean(val_batches_top10_acc_list):.4f} \n'

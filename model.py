@@ -159,11 +159,10 @@ class SpaAggregator(nn.Module):
             _sample = random.sample
             samp_neighs = []
             for i, to_neigh in enumerate(to_neighs):
-                if len(to_neigh) >= num_sample:
+                if len(to_neigh) > num_sample:
                     samp_neighs.append(_set(_sample(to_neigh, num_sample)))
-                elif len(to_neigh) == 0:  # no neigh
-                    # print(to_neigh)
-                    samp_neighs.append({nodes[i]})
+                elif len(to_neigh)==0:
+                    samp_neighs.append({int(nodes[i])})
                 else:
                     samp_neighs.append(_set(to_neigh))
             # samp_neighs = [_set(_sample(to_neigh, num_sample)) if len(to_neigh) >= num_sample
@@ -172,6 +171,7 @@ class SpaAggregator(nn.Module):
             samp_neighs = to_neighs
 
         # ignore the unlinked nodes
+
         unique_nodes_list = list(set.union(*samp_neighs))
         unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
         mask = Variable(torch.zeros(len(samp_neighs), len(unique_nodes))).to(self.device)
@@ -180,6 +180,7 @@ class SpaAggregator(nn.Module):
 
         adj_weight=torch.tensor([adj_list[i][n] for i,samp_neigh in enumerate( samp_neighs) for n in samp_neigh]).to(self.device)
         mask[row_indices, column_indices] = adj_weight  # can be replaced by distance
+        #mask[row_indices, column_indices] = 1
         # print(torch.sum(torch.isnan(mask)))
         num_neigh = mask.sum(1, keepdim=True)
         mask = mask.div(num_neigh)

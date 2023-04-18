@@ -24,9 +24,7 @@ def label_context(label_seq,num_pois,nei,num_sample):
             label_seq_context.append([label])
         else:
             label_seq_context.append(neighbors)
-    labels=[]
-    for l in label_seq_context:
-        labels.append(torch.tensor(l))
+    labels=[torch.tensor(l) for l in label_seq_context]
 
     labels = [F.one_hot(label, num_classes=num_pois).sum(dim=0) for label in labels]
     labels = torch.stack(labels, dim=0)
@@ -92,8 +90,6 @@ def adj_list(raw_A,raw_X):
                 raw_A[j][i] = raw_A[i][j]  # 更新下方的元素
     for i in range(n):
         for j in range(n):
-            if i==j:
-                continue
             if raw_A[i][j] > 0:
                 adj_list[i][j] = raw_A[i][j]
 
