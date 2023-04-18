@@ -239,8 +239,8 @@ def train(args):
     args.gcn_nfeat = X.shape[1]
     poi_embed_model = PoiEmbeddings(num_pois,args.poi_embed_dim)
 
-    sage_model=GraphSage(num_node=num_pois, feature_dim=args.sage_num_feature, embed_dim=args.sage_embed_dim,
-                                   adj=adj, device=args.device)
+    sage_model=GraphSage(num_node=num_pois, context_sample_num=args.context_sample_num, embed_dim=args.sage_embed_dim,
+                         adj=adj, device=args.device)
 
     # %% Model2: User embedding model, nn.embedding
     num_users = len(user_id2idx_dict)
@@ -418,7 +418,7 @@ def train(args):
                 traj_id = sample[0]
                 input_seq = [each[0] for each in sample[1]]
                 label_seq = [each[0] for each in sample[2]]
-                label_seq_context=label_context(label_seq,num_pois,nei,args.context_sample)
+                label_seq_context=label_context(label_seq,num_pois,nei,args.context_sample_num)
 
 
                 input_seq_time = [each[1] for each in sample[1]]

@@ -83,7 +83,7 @@ def adj_list(raw_A,raw_X):
     raw_X=np.copy(raw_X)
     # 假设邻接矩阵是一个二维数组matrix
     n = len(raw_A)  # 邻接矩阵的行数和列数
-    adj_list = [dict()] * n
+    adj_list = [{} for _ in range(n)]
     # 如果要将有向图转换为无向图
     for i in range(n):  # 遍历每一行
         for j in range(i + 1, n):  # 遍历对角线上方的每一列

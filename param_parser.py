@@ -58,14 +58,10 @@ def parameter_parser():
                         type=int,
                         default=128,
                         help='sage embedding dimensions')
-    parser.add_argument('--context-sample',
-                        type=int,
-                        default=4,
-                        help='context sample num')
-    parser.add_argument('--sage-num-feature',
+    parser.add_argument('--context-sample-num',
                         type=int,
                         default=10,
-                        help='sage num feature')
+                        help='context sample num')
     parser.add_argument('--user-embed-dim',
                         type=int,
                         default=128,
