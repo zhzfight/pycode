@@ -58,15 +58,25 @@ def same_category(node1,node2):
 # 定义一个函数，判断两个节点之间的地理距离是否小于阈值
 def within_threshold(node1,node2):
     g = geod.Inverse(node1[1], node1[0], node2[1], node2[0])
-    return g['s12']<=1000
+    return g['s12']<=500
 
-# 定义一个函数，获取一个节点的所有邻居列表
+
+def get_dis_neighbors(index,nodes):
+    neighbors=[]
+    for i in range(len(nodes)):
+        if i==index:
+            continue
+        if within_threshold(nodes[i],nodes[index]):
+            neighbors.append(i)
+    return neighbors
+
 def get_all_neighbors(matrix,index,nodes):
     neighbors = []
     direct_neighbors = get_direct_neighbors(matrix,index)
     second_neighbors = get_second_neighbors(matrix,index,nodes)
-    for n in direct_neighbors + second_neighbors:
-        if n not in neighbors and within_threshold(nodes[n],nodes[index]):
+    dis_neighbors=get_dis_neighbors(index,nodes)
+    for n in direct_neighbors + second_neighbors+dis_neighbors:
+        if n not in neighbors :
             neighbors.append(n)
     return neighbors
 # 定义一个函数，获取所有节点的邻居列表

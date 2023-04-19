@@ -179,9 +179,9 @@ class SpaAggregator(nn.Module):
         column_indices = [unique_nodes[n] for samp_neigh in samp_neighs for n in samp_neigh]
         row_indices = [i for i in range(len(samp_neighs)) for j in range(len(samp_neighs[i]))]
 
-        adj_weight=torch.tensor([adj_list[i][n] for i,samp_neigh in enumerate( samp_neighs) for n in samp_neigh]).to(self.device)
-        mask[row_indices, column_indices] = adj_weight  # can be replaced by distance
-        #mask[row_indices, column_indices] = 1
+        #adj_weight=torch.tensor([adj_list[i][n] for i,samp_neigh in enumerate( samp_neighs) for n in samp_neigh]).to(self.device)
+        #mask[row_indices, column_indices] = adj_weight  # can be replaced by distance
+        mask[row_indices, column_indices] = 1
         # print(torch.sum(torch.isnan(mask)))
         num_neigh = mask.sum(1, keepdim=True)
         mask = mask.div(num_neigh)

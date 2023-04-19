@@ -13,7 +13,7 @@ def parameter_parser():
     parser = argparse.ArgumentParser(description="Run GETNext.")
     parser.add_argument('--seed',
                         type=int,
-                        default=42,
+                        default=777,
                         help='Random seed')
     parser.add_argument('--device',
                         type=str,
@@ -56,7 +56,7 @@ def parameter_parser():
                         help='POI embedding dimensions')
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=128,
+                        default=64,
                         help='sage embedding dimensions')
     parser.add_argument('--context-sample-num',
                         type=int,
@@ -108,7 +108,7 @@ def parameter_parser():
                         help='Scale factor for the time loss term')
     parser.add_argument('--context_loss-weight',
                         type=int,
-                        default=10,
+                        default=20,
                         help='Scale factor for the time loss term')
     parser.add_argument('--node-attn-nhid',
                         type=int,

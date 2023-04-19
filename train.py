@@ -79,9 +79,10 @@ def train(args):
     one_hot_encoder.fit(list(map(lambda x: [x], cat_list)))
     one_hot_rlt = one_hot_encoder.transform(list(map(lambda x: [x], cat_list))).toarray()
     num_cats = one_hot_rlt.shape[-1]
-    X = np.zeros((num_pois, raw_X.shape[-1] - 3 + num_cats), dtype=np.float32)
+    X = np.zeros((num_pois, raw_X.shape[-1] - 1 + num_cats), dtype=np.float32)
     X[:, 0] = raw_X[:, 0]
     X[:, 1:num_cats + 1] = one_hot_rlt
+    X[:, num_cats + 1:] = raw_X[:, 2:]
     logging.info(f"After one hot encoding poi cat, X.shape: {X.shape}")
     logging.info(f'POI categories: {list(one_hot_encoder.categories_[0])}')
     # Save ont-hot encoder
@@ -243,7 +244,7 @@ def train(args):
     args.gcn_nfeat = X.shape[1]
     poi_embed_model = PoiEmbeddings(num_pois,args.poi_embed_dim)
 
-    sage_model=GraphSage(X=X,num_node=num_pois, context_sample_num=args.context_sample_num, embed_dim=args.sage_embed_dim,
+    sage_model=GraphSage(num_node=num_pois, context_sample_num=args.context_sample_num, embed_dim=args.sage_embed_dim,
                          adj=adj, device=args.device)
 
     # %% Model2: User embedding model, nn.embedding
@@ -424,6 +425,7 @@ def train(args):
                 label_seq = [each[0] for each in sample[2]]
                 label_seq_context=label_context(label_seq,num_pois,nei,args.context_sample_num)
 
+
                 input_seq_time = [each[1] for each in sample[1]]
                 label_seq_time = [each[1] for each in sample[2]]
                 label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
@@ -446,7 +448,7 @@ def train(args):
             label_padded_context=pad_sequence(batch_seq_labels_context,batch_first=True,padding_value=0)
 
             mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
-            mask=mask.to(args.device)
+
 
 
             # Feedforward
@@ -570,7 +572,7 @@ def train(args):
                 traj_id = sample[0]
                 input_seq = [each[0] for each in sample[1]]
                 label_seq = [each[0] for each in sample[2]]
-                label_seq_context = label_context(label_seq, num_pois, nei, args.context_sample_num)
+                label_seq_context = label_context(label_seq, num_pois, nei, args.context_sample)
                 input_seq_time = [each[1] for each in sample[1]]
                 label_seq_time = [each[1] for each in sample[2]]
                 label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
@@ -601,7 +603,7 @@ def train(args):
 
             mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(
                 batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
-            mask=mask.to(args.device)
+
             y_pred_poi, y_pred_time, y_pred_cat,y_pred_context  = seq_model(x, src_mask)
 
 
