@@ -79,10 +79,9 @@ def train(args):
     one_hot_encoder.fit(list(map(lambda x: [x], cat_list)))
     one_hot_rlt = one_hot_encoder.transform(list(map(lambda x: [x], cat_list))).toarray()
     num_cats = one_hot_rlt.shape[-1]
-    X = np.zeros((num_pois, raw_X.shape[-1] - 1 + num_cats), dtype=np.float32)
+    X = np.zeros((num_pois, raw_X.shape[-1] - 3 + num_cats), dtype=np.float32)
     X[:, 0] = raw_X[:, 0]
     X[:, 1:num_cats + 1] = one_hot_rlt
-    X[:, num_cats + 1:] = raw_X[:, 2:]
     logging.info(f"After one hot encoding poi cat, X.shape: {X.shape}")
     logging.info(f'POI categories: {list(one_hot_encoder.categories_[0])}')
     # Save ont-hot encoder

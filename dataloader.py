@@ -12,7 +12,7 @@ def load_graph_node_features(path, feature1='checkin_cnt', feature2='poi_catid_c
                              feature3='latitude', feature4='longitude'):
     """X.shape: (num_node, 4), four features: checkin cnt, poi cat, latitude, longitude"""
     df = pd.read_csv(path)
-    rlt_df = df[[feature1, feature2]]
+    rlt_df = df[[feature1, feature2, feature3, feature4]]
     X = rlt_df.to_numpy()
 
     return X
