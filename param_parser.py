@@ -72,8 +72,8 @@ def parameter_parser():
                         help='List of hidden dims for gcn layers')
     parser.add_argument('--seqmodel-nhid',
                         type=int,
-                        default=1024,
-                        help='Hid dim in TransformerEncoder')
+                        default=512,
+                        help='Hid dim in rnnEncoder')
 
     parser.add_argument('--time-embed-dim',
                         type=int,

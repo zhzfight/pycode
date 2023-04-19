@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
-from torch.nn import Parameter
+from torch.nn import Parameter,init
 
 
 class NodeAttnMap(nn.Module):
@@ -191,10 +191,10 @@ class GRUModel(nn.Module):
     def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid,device,dropout,tu):
         super(GRUModel, self).__init__()
         from torch.nn import GRU
-        self.time_embed_size=50
+        self.time_embed_size=32
         self.dropout=nn.Dropout(dropout)
         self.grucell = nn.GRUCell(embed_size, nhid)
-        self.h0 = self.h0 = nn.Parameter(torch.randn(1, nhid)).to(device)
+        self.h0 = nn.Parameter(torch.randn(1, nhid)).to(device)
         self.node_attn_model=NodeAttnMap(in_features=node_attn_in_features, nhid=node_attn_nhid, use_mask=False)
         self.device=device
         self.nhid=nhid
@@ -204,10 +204,11 @@ class GRUModel(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
-        self.init_weights()
-        self.emb_tu = nn.Embedding(2, self.time_embed_size, padding_idx=0)
-        self.emb_tl = nn.Embedding(2, self.time_embed_size, padding_idx=0)
+
+        self.emb_tu = nn.Parameter(torch.FloatTensor(self.nhid,self.nhid))
+        self.emb_tl = nn.Parameter(torch.FloatTensor(self.nhid,self.nhid))
         self.tu=tu
+        self.init_weights()
 
 
 
@@ -215,6 +216,9 @@ class GRUModel(nn.Module):
         initrange = 0.1
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
+        stdv = 1.0 / math.sqrt(self.nhid)
+        self.emb_tl.data.uniform_(-stdv, stdv)
+        self.emb_tu.data.uniform_(-stdv, stdv)
 
     def forward(self, src,batch_seq_lens,batch_input_seqs, X,A,batch_input_seqs_ts):
         attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9).to(self.device)
@@ -232,21 +236,18 @@ class GRUModel(nn.Module):
             for j in range(1,len(traj_i_ts_input)):
                 for k in range(j):
                     timeIntervals[i,j,k]=traj_i_ts_input[j]-traj_i_ts_input[k]
-        mask = torch.where(timeIntervals != 0, torch.tensor(1), torch.tensor(0)).to(self.device)
-        etl=self.emb_tl(mask)
-        etu=self.emb_tu(mask)
-        vtl=timeIntervals.unsqueeze(-1).expand(-1, -1, -1, self.time_embed_size)
-        vtu=(self.tu - timeIntervals).unsqueeze(-1).expand(-1, -1, -1, self.time_embed_size)
-        time_interval = (etl * vtu + etu * vtl) /self.tu
+
 
         v0,indices=torch.max(attns,dim=-1)
+        t0=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
         for i in range(1,src.shape[1]):
-            v0[:,i]+=torch.sum(time_interval[np.arange(src.shape[0]),i, indices[:,i]],dim=-1)
+            t0[:, i] = timeIntervals[np.arange(src.shape[0]), i, indices[:, i]]
 
         v1=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
+        t1=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
         for i in range(1, src.shape[1]):
-            v1[:,i]=attns[:,i,i-1]+torch.sum(time_interval[:,i,i-1,:],dim=-1)
-
+            v1[:,i]=attns[:,i,i-1]
+            t1[:,i]=timeIntervals[:,i,i-1]
 
         v= torch.stack([v0, v1], dim=-1)
         v = torch.nn.functional.softmax(v, dim=-1)
@@ -257,13 +258,17 @@ class GRUModel(nn.Module):
         hid = self.grucell(src[:,0,:],hid)
         x[:,0,:]=hid
         for i in range(1,src.shape[1]):
-            hid1 = self.grucell(src[:, i, :], hid)
-            hid2 = self.grucell(src[:,i,:],x[np.arange(x.shape[0]), indices[:, i]])
+            W0=(self.emb_tl * ((self.tu- t0[:, i]).unsqueeze(-1).unsqueeze(-1).expand(-1, self.nhid, self.nhid)) + self.emb_tu * (
+                t0[:, i].unsqueeze(-1).unsqueeze(-1).expand(-1, self.nhid, self.nhid))) / self.tu
+            W1=(self.emb_tl * ((self.tu- t1[:, i]).unsqueeze(-1).unsqueeze(-1).expand(-1, self.nhid, self.nhid)) + self.emb_tu * (
+                t1[:, i].unsqueeze(-1).unsqueeze(-1).expand(-1, self.nhid, self.nhid))) / self.tu
+            hid1 = self.grucell(src[:, i, :], W1.bmm(hid.unsqueeze(-1)).squeeze(-1))
+            hid0 = self.grucell(src[:,i,:],W0.bmm(x[np.arange(x.shape[0]), indices[:, i]].unsqueeze(-1)).squeeze(-1))
 
 
-            alpha1=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
-            alpha2=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
-            hid = torch.mul(alpha1,hid1)+torch.mul(alpha2,hid2)
+            alpha0=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
+            alpha1=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
+            hid = torch.mul(alpha1,hid1)+torch.mul(alpha0,hid0)
             hid=self.dropout(hid)
             x[:,i,:]=hid
 
