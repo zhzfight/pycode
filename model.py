@@ -269,7 +269,7 @@ class TransformerModel(nn.Module):
         self.decoder_poi = nn.Linear(embed_size, num_poi)
         self.decoder_time = nn.Linear(embed_size, 1)
         self.decoder_cat = nn.Linear(embed_size, num_cat)
-        self.decoder_context=nn.Linear(embed_size,num_poi)
+        #self.decoder_context=nn.Linear(embed_size,num_poi)
         self.init_weights()
 
     def generate_square_subsequent_mask(self, sz):
@@ -289,8 +289,10 @@ class TransformerModel(nn.Module):
         out_poi = self.decoder_poi(x)
         out_time = self.decoder_time(x)
         out_cat = self.decoder_cat(x)
-        out_context=self.decoder_context(x)
+        #out_context=self.decoder_context(x)
 
 
 
-        return out_poi, out_time, out_cat,out_context
+        #return out_poi, out_time, out_cat,out_context
+
+        return out_poi, out_time, out_cat
