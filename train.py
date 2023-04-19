@@ -448,7 +448,7 @@ def train(args):
             label_padded_context=pad_sequence(batch_seq_labels_context,batch_first=True,padding_value=0)
 
             mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
-
+            mask=mask.to(args.device)
 
 
             # Feedforward
@@ -603,7 +603,7 @@ def train(args):
 
             mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(
                 batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
-
+            mask=mask.to(args.device)
             y_pred_poi, y_pred_time, y_pred_cat,y_pred_context  = seq_model(x, src_mask)
 
 
