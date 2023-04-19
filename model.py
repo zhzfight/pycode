@@ -134,7 +134,7 @@ class SpaAggregator(nn.Module):
     """
     Aggregates a node's embeddings using mean of neighbors' embeddings and transform
     """
-    def __init__(self, id2feat,  device,id):
+    def __init__(self, id2feat,  device,id,feature_dim,embed_dim):
         """
         features -- function mapping LongTensor of node ids to FloatTensor of feature values.
         cuda -- whether to use GPU
@@ -145,6 +145,10 @@ class SpaAggregator(nn.Module):
         self.device=device
         self.id=id
 
+        self.weight=nn.Parameter(torch.FloatTensor(feature_dim,embed_dim))
+        self.bias=nn.Parameter(torch.FloatTensor(embed_dim))
+        init.xavier_uniform_(self.weight)
+        self.bias.data.zero_()
 
     def forward(self, nodes, adj_list, num_sample):
         """
@@ -192,6 +196,7 @@ class SpaAggregator(nn.Module):
             embed_matrix = self.id2feat[torch.LongTensor(unique_nodes_list).to(self.device)]  # （??, feat_dim)
         else:
             embed_matrix = self.id2feat(torch.LongTensor(unique_nodes_list).to(self.device))  # （??, feat_dim)
+        embed_matrix = embed_matrix.mm(self.weight)+ self.bias
         to_feats = mask.mm(embed_matrix)  # (?, num_sample)
         # print(torch.sum(torch.isnan(embed_matrix)))
         return to_feats  # (?, feat_dim)
@@ -204,18 +209,21 @@ class SageLayer(nn.Module):
     cuda -- whether to use GPU
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
-    def __init__(self, id2feat, adj_list, context_sample_num, input_dim, output_dim, device, id):
+    def __init__(self, id2feat, adj_list, context_sample_num, feature_dim,embed_dim, device, id):
         super(SageLayer, self).__init__()
         self.id=id
         self.id2feat = id2feat
-        self.agg = SpaAggregator(self.id2feat,  device,id)
+        self.agg = SpaAggregator(self.id2feat,  device,id,feature_dim, embed_dim)
         self.num_sample = context_sample_num
         self.device=device
         self.adj_list = adj_list
         self.weight = nn.Parameter(
-                torch.FloatTensor(output_dim, 2 * input_dim))
-
+                torch.FloatTensor(feature_dim,embed_dim))
+        self.wc=nn.Parameter(torch.FloatTensor(embed_dim,2*embed_dim))
+        self.bias=nn.Parameter(torch.FloatTensor(embed_dim))
+        self.bias.data.zero_()
         init.xavier_uniform_(self.weight)
+        init.xavier_uniform_(self.wc)
 
     def forward(self, nodes):
         """
@@ -228,9 +236,10 @@ class SageLayer(nn.Module):
             self_feats = self.id2feat[nodes]
         else:
             self_feats = self.id2feat(nodes)
+        self_feats=self_feats.mm(self.weight)+self.bias
         combined = torch.cat((self_feats, neigh_feats), dim=1)  # (?, 2*feat_dim)
         # print(combined.shape)
-        combined = F.relu(self.weight.mm(combined.t()))
+        combined = F.relu(self.wc.mm(combined.t()))
         # pdb.set_trace()
         return combined
 

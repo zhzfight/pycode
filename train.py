@@ -244,7 +244,7 @@ def train(args):
     args.gcn_nfeat = X.shape[1]
     poi_embed_model = PoiEmbeddings(num_pois,args.poi_embed_dim)
 
-    sage_model=GraphSage(num_node=num_pois, context_sample_num=args.context_sample_num, embed_dim=args.sage_embed_dim,
+    sage_model=GraphSage(X=X,num_node=num_pois, context_sample_num=args.context_sample_num, embed_dim=args.sage_embed_dim,
                          adj=adj, device=args.device)
 
     # %% Model2: User embedding model, nn.embedding
