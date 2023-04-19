@@ -446,7 +446,7 @@ def train(args):
             label_padded_context=pad_sequence(batch_seq_labels_context,batch_first=True,padding_value=0)
 
             mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
-
+            mask=mask.to(args.device)
 
 
             # Feedforward
@@ -570,7 +570,7 @@ def train(args):
                 traj_id = sample[0]
                 input_seq = [each[0] for each in sample[1]]
                 label_seq = [each[0] for each in sample[2]]
-                label_seq_context = label_context(label_seq, num_pois, nei, args.context_sample)
+                label_seq_context = label_context(label_seq, num_pois, nei, args.context_sample_num)
                 input_seq_time = [each[1] for each in sample[1]]
                 label_seq_time = [each[1] for each in sample[2]]
                 label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
@@ -601,7 +601,7 @@ def train(args):
 
             mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(
                 batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
-
+            mask=mask.to(args.device)
             y_pred_poi, y_pred_time, y_pred_cat,y_pred_context  = seq_model(x, src_mask)
 
 
