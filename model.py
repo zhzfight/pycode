@@ -129,7 +129,7 @@ class MeanAggregator1(nn.Module):
     """
     Aggregates a node's embeddings using mean of neighbors' embeddings and transform
     """
-    def __init__(self, id2feat,  device,feature_dim,embed_dim):
+    def __init__(self, id2feat,  device,feature_dim,embed_dim,num_sample):
         """
         features -- function mapping LongTensor of node ids to FloatTensor of feature values.
         cuda -- whether to use GPU
@@ -139,29 +139,27 @@ class MeanAggregator1(nn.Module):
         self.id2feat = id2feat
         self.device=device
         self.id=id
+        self.num_sample=num_sample
         self.W=nn.Linear(feature_dim,embed_dim)
 
-    def forward(self, nodes, to_neighs, num_sample):
+    def forward(self, nodes, to_neighs):
         """
         nodes --- list of nodes in a batch
         dis --- shape alike adj
         to_neighs --- list of sets, each set is the set of neighbors for node in batch
         num_sample --- number of neighbors to sample. No sampling if None.
         """
+        # node n
+        # to_neighs n * ??
+        samp_neighs = []
+        for i, to_neigh in enumerate(to_neighs):
+            if len(to_neigh) > self.num_sample:
+                samp_neighs.append(random.sample(to_neigh, self.num_sample))
+            elif len(to_neigh)==0:
+                samp_neighs.append(int(nodes[i]))
+            else:
+                samp_neighs.append(to_neigh)
 
-        # sample neighbors
-        if num_sample is not None:
-
-            samp_neighs = []
-            for i, to_neigh in enumerate(to_neighs):
-                if len(to_neigh) > num_sample:
-                    samp_neighs.append(random.sample(to_neigh, num_sample))
-                else:
-                    samp_neighs.append(to_neigh)
-            # samp_neighs = [_set(_sample(to_neigh, num_sample)) if len(to_neigh) >= num_sample
-            #                else _set(to_neigh) for to_neigh in to_neighs]
-        else:
-            samp_neighs = to_neighs
 
         # ignore the unlinked nodes
         tmp = []
@@ -175,44 +173,42 @@ class MeanAggregator1(nn.Module):
         column_indices = [unique_nodes[n] for samp_neigh in samp_neighs for n in samp_neigh]
         row_indices = [i for i in range(len(samp_neighs)) for j in range(len(samp_neighs[i]))]
 
-        #adj_weight=torch.tensor([adj_list[i][n] for i,samp_neigh in enumerate( samp_neighs) for n in samp_neigh]).to(self.device)
-        #mask[row_indices, column_indices] = adj_weight  # can be replaced by distance
+
         mask[row_indices, column_indices] = 1
-        # print(torch.sum(torch.isnan(mask)))
+
         num_neigh = mask.sum(1, keepdim=True)
         mask = mask.div(num_neigh)
-        # spatial_transition = Variable(torch.FloatTensor(len(samp_neighs), len(unique_nodes)))
-        # print(unique_nodes_list)
-        # pdb.set_trace()
 
-        embed_matrix = self.id2feat[torch.LongTensor(unique_nodes_list).to(self.device)]  # （??, feat_dim)
-        embed_matrix = self.W(embed_matrix)
-        to_feats = mask.mm(embed_matrix)  # (?, num_sample)
-        # print(torch.sum(torch.isnan(embed_matrix)))
-        return to_feats  # (?, feat_dim)
+
+        embed_matrix = self.id2feat[torch.LongTensor(unique_nodes_list).to(self.device)]  # （unique_count, feat_dim)
+        embed_matrix = self.W(embed_matrix) # unique_count * embed_dim
+        to_feats = mask.mm(embed_matrix)  # n * embed_dim
+
+        return to_feats  # n * embed_dim
 
 class AttnAggregator2(nn.Module):
     def __init__(self,id2feat,device,feature_dim,embed_dim,num_sample):
         super(AttnAggregator2,self).__init__()
         self.id2feat=id2feat
         self.num_sample=num_sample
+        self.device=device
         self.W_Q=nn.Linear(feature_dim,embed_dim)
         self.W_K=nn.Linear(feature_dim,embed_dim)
         self.W_V=nn.Linear(feature_dim,embed_dim)
-        self.W=nn.Linear(2*feature_dim,embed_dim)
-    def forward(self,nodes,to_neighs,num_sample):
-
+    def forward(self,nodes,to_neighs):
 
         self_feats=self.id2feat(nodes)
-        to_neighs=random.sample([list(to_neigh) for to_neigh in to_neighs],self.num_sample)
-        to_neighs=self.id2feat(torch.LongTensor(to_neighs))
+        if len(to_neighs) > self.num_sample:
+            to_neighs=random.sample(to_neighs, self.num_sample)
 
-        Q=self.W_Q(self_feats)
-        K=self.W_K(to_neighs)
-        V=self.W_V(to_neighs)
-        attn_score=torch.mm(Q,K.transpose(1,0))
-        attn_score = F.softmax(attn_score,dim=-1)
-        neigh_feats=torch.matmul(attn_score.unsqueeze(0), V).squeeze(0)
+        samp_neighs=self.id2feat(torch.LongTensor(to_neighs).to(self.device))
+
+        Q=self.W_Q(self_feats)   # 1 * embed_dim
+        K=self.W_K(samp_neighs)  # neighs * embed_dim
+        V=self.W_V(samp_neighs)  # neighs * embed_dim
+        attn_score=torch.mm(Q,K.transpose(1,0)) # 1 * neighs
+        attn_score = F.softmax(attn_score,dim=-1) # 1 * neighs
+        neigh_feats=torch.matmul(attn_score, V) # 1 * embed_dim
 
         return self_feats,neigh_feats
 
@@ -229,38 +225,36 @@ class AttnAggregator1(nn.Module):
         self.W=nn.Linear(feature_dim,embed_dim)
 
 
-    def forward(self, nodes, to_neighs, num_sample):
-        # sample neighbors
-        if num_sample is not None:
+    def forward(self, nodes, to_neighs):
+        # nodes n
+        # to_neighs n * ??
+        samp_neighs = []
+        for i, to_neigh in enumerate(to_neighs):
+            if len(to_neigh) > self.num_sample:
+                samp_neighs.append(random.sample(to_neigh, self.num_sample))
+            else:
+                samp_neighs.append(to_neigh)
 
-            samp_neighs = []
-            for i, to_neigh in enumerate(to_neighs):
-                if len(to_neigh) > num_sample:
-                    samp_neighs.append(random.sample(to_neigh, num_sample))
-                else:
-                    samp_neighs.append(to_neigh)
-            # samp_neighs = [_set(_sample(to_neigh, num_sample)) if len(to_neigh) >= num_sample
-            #                else _set(to_neigh) for to_neigh in to_neighs]
-        else:
-            samp_neighs = to_neighs
 
         tmp=[]
         for samp_neigh in samp_neighs:
             tmp.append(self.id2feat[torch.LongTensor(samp_neigh).to(self.device)])
-        tmp=pad_sequence(tmp,batch_first=True,padding_value=0)
+        tmp=pad_sequence(tmp,batch_first=True,padding_value=0) # n * L * feature_dim
 
-
-        Q=self.W_Q(nodes)
-        K=self.W_K(tmp)
+        nodes=self.id2feat[nodes] # n * feature_dim
+        Q=self.W_Q(nodes) # n * embed_dim
+        K=self.W_K(tmp) # n * L *embed_dim
         V=self.W_V(tmp)
 
-        attn_score=torch.mm(Q.unsqueeze(1),K.transpose(2,1)).squeeze(1)
+        attn_score=torch.mm(Q.unsqueeze(1),K.transpose(2,1)).squeeze(1) # n * L
         mask = torch.zeros_like(attn_score).bool()
+        for samp_neigh in samp_neighs:
+            mask[:,len(samp_neigh):]=True
 
         attn_score = F.softmax(attn_score.masked_fill(mask, float('-inf')), dim=-1)
-        neigh_feats = torch.matmul(attn_score.unsqueeze(1), V).squeeze(1)
+        neigh_feats = torch.matmul(attn_score.unsqueeze(1), V).squeeze(1) # (n * 1 * L) (n * L * embed_dim) = (n * 1 * embed_dim)
 
-        self_feats=self.W(nodes)
+        self_feats=self.W(nodes) # n * embed_dim
 
 
         return self_feats,neigh_feats
@@ -288,8 +282,8 @@ class SageLayer1(nn.Module):
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
-        context_feats = self.Meanagg(nodes, [self.dis_list[int(node)] for node in nodes], self.num_sample)
-        neigh_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes],self.num_sample)
+        context_feats = self.Meanagg(nodes, [self.dis_list[int(node)] for node in nodes])
+        neigh_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes])
         self_feats = self.id2feat[nodes]
 
         combined = torch.cat((self_feats, neigh_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
@@ -315,13 +309,13 @@ class SageLayer2(nn.Module):
         self.adj_list = adj_list
         self.W=nn.Linear(2*embed_dim,embed_dim)
 
-    def forward(self, nodes):
+    def forward(self, node):
         """
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
 
-        self_feats,neigh_feats= self.agg(nodes, [self.adj_list[int(node)] for node in nodes])
+        self_feats,neigh_feats= self.agg(node, self.adj_list[int(node)])
         combined=self.W(torch.cat((self_feats,neigh_feats),dim=-1))
         return combined
 

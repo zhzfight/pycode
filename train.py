@@ -126,6 +126,10 @@ def train(args):
             pickle.dump(adj, f)  # 把字典写入pickle文件
         with open(os.path.join(args.adj_path,'dis.pkl'), 'wb') as f:
             pickle.dump(dis, f)  # 把字典写入pickle文件
+    no_neighbor=[]
+    for i in range(len(adj)):
+        if len(adj[i])==0:
+            no_neighbor.append(i)
 
 
     # %% ====================== Define Dataset ======================
@@ -152,7 +156,7 @@ def train(args):
 
                 if len(input_seq) < args.short_traj_thres:
                     continue
-                if len(set([each[0] for each in input_seq]))<2:
+                if set(input_seq) & set(no_neighbor):
                     continue
 
                 self.traj_seqs.append(traj_id)
@@ -308,10 +312,7 @@ def train(args):
         # POI to embedding and fuse embeddings
         input_seq_embed = []
         for idx in range(len(input_seq)):
-            poi_idx=torch.LongTensor([input_seq[idx]]).to(device=args.device)
-            poi_embedding = sage_model(poi_idx)
-            poi_embedding = torch.squeeze(poi_embedding).to(device=args.device)
-
+            poi_embedding = sage_model(torch.tensor(input_seq[idx]).to(args.device))
 
             # Time to vector
             time_embedding = time_embed_model(

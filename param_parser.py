@@ -53,18 +53,14 @@ def parameter_parser():
                         default='norm_in_day_time',
                         help='The name of time feature in the data')
 
-    # Model hyper-parameters
-    parser.add_argument('--poi-embed-dim',
-                        type=int,
-                        default=128,
-                        help='POI embedding dimensions')
+
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=64,
+                        default=128,
                         help='sage embedding dimensions')
     parser.add_argument('--num-sample',
                         type=int,
-                        default=10,
+                        default=15,
                         help='neighbor sample num')
     parser.add_argument('--user-embed-dim',
                         type=int,
