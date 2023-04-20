@@ -58,19 +58,7 @@ def train(args):
     train_df = pd.read_csv(args.data_train)
     val_df = pd.read_csv(args.data_val)
 
-    def calculate_time_range(group):
-        return group['timestamp'].max() - group['timestamp'].min()
 
-    train_df['timestamp'] = pd.to_datetime(train_df['local_time']).astype('int64') // 10 ** 9
-    result = train_df.groupby('trajectory_id').apply(calculate_time_range)
-    i1=result.max()
-    val_df['timestamp'] = pd.to_datetime(val_df['local_time']).astype('int64') // 10 ** 9
-    result = val_df.groupby('trajectory_id').apply(calculate_time_range)
-    i2=result.max()
-    if i1>i2:
-        tu=i1
-    else:
-        tu=i2
     # Build POI graph (built from train_df)
     print('Loading POI graph...')
     raw_A = load_graph_adj_mtx(args.data_adj_mtx)
@@ -263,8 +251,7 @@ def train(args):
                          node_attn_in_features=X.shape[1],
                          node_attn_nhid=args.node_attn_nhid,
                          device=args.device,
-                         dropout=args.gru_dropout,
-                         tu=tu)
+                         dropout=args.gru_dropout)
 
     # Define overall loss and optimizer
     optimizer = optim.Adam(params=list(poi_embed_model.parameters()) +
@@ -400,7 +387,6 @@ def train(args):
                 # sample[0]: traj_id, sample[1]: input_seq, sample[2]: label_seq
                 traj_id = sample[0]
                 input_seq = [each[0] for each in sample[1]]
-                input_seq_ts=[each[2] for each in sample[1]]
                 label_seq = [each[0] for each in sample[2]]
                 input_seq_time = [each[1] for each in sample[1]]
                 label_seq_time = [each[1] for each in sample[2]]
@@ -433,7 +419,7 @@ def train(args):
             # Final loss
             loss = loss_poi + loss_time * args.time_loss_weight + loss_cat
             optimizer.zero_grad()
-            loss.backward(retain_graph=True)
+            loss.backward()
             optimizer.step()
 
             # Performance measurement
