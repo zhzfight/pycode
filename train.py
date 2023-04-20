@@ -437,8 +437,9 @@ def train(args):
             # Final loss
             loss = loss_poi + loss_time * args.time_loss_weight + loss_cat
             optimizer.zero_grad()
-            loss.backward(retain_graph=True)
+            loss.backward()
             optimizer.step()
+            torch.cuda.empty_cache()
 
             # Performance measurement
             top1_acc = 0
