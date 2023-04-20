@@ -204,17 +204,19 @@ class GRUModel(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
-        self.init_weights()
+
 
         self.W_H=nn.Linear(nhid,nhid,bias=False)
         self.W_X=nn.Linear(embed_size,nhid,bias=False)
         self.bias=nn.Parameter(torch.FloatTensor(1,nhid))
+        self.init_weights()
 
     def init_weights(self):
         initrange = 0.1
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
-
+        self.W_H.weight.data.uniform_(-initrange, initrange)
+        self.W_X.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src,batch_seq_lens,batch_input_seqs, X,A):
         attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9).to(self.device)
