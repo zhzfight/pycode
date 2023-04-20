@@ -207,6 +207,8 @@ class GRUModel(nn.Module):
 
         self.emb_tu = nn.Parameter(torch.FloatTensor(self.nhid,self.nhid))
         self.emb_tl = nn.Parameter(torch.FloatTensor(self.nhid,self.nhid))
+        init.xavier_uniform_(self.emb_tu.data, gain=1.414)
+        init.xavier_uniform_(self.emb_tl.data, gain=1.414)
         self.tu=tu
         self.init_weights()
 
@@ -216,9 +218,6 @@ class GRUModel(nn.Module):
         initrange = 0.1
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
-        stdv = 1.0 / math.sqrt(self.nhid)
-        self.emb_tl.data.uniform_(-stdv, stdv)
-        self.emb_tu.data.uniform_(-stdv, stdv)
 
     def forward(self, src,batch_seq_lens,batch_input_seqs, X,A,batch_input_seqs_ts):
         attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9).to(self.device)
