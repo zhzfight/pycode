@@ -6,6 +6,7 @@ import torch.nn.functional as F
 from torch.nn import Parameter
 from torch.nn import init
 from torch.autograd import Variable
+from torch.nn.utils.rnn import pad_sequence
 import random
 import numpy as np
 seed = 0
@@ -13,13 +14,7 @@ random.seed(seed)
 np.random.seed(seed)
 torch.manual_seed(seed)
 
-class PoiEmbeddings(nn.Module):
-    def __init__(self,num_pois,embedding_dim):
-        super(PoiEmbeddings,self).__init__()
-        self.poi_embedding=nn.Embedding(num_embeddings=num_pois,embedding_dim=embedding_dim)
-    def forward(self,poi_idx):
-        embed=self.poi_embedding(poi_idx)
-        return embed
+
 
 class UserEmbeddings(nn.Module):
     def __init__(self, num_users, embedding_dim):
@@ -130,54 +125,51 @@ class PositionalEncoding(nn.Module):
         return self.dropout(x)
 
 
-class SpaAggregator(nn.Module):
+class MeanAggregator1(nn.Module):
     """
     Aggregates a node's embeddings using mean of neighbors' embeddings and transform
     """
-    def __init__(self, id2feat,  device,id,feature_dim,embed_dim):
+    def __init__(self, id2feat,  device,feature_dim,embed_dim):
         """
         features -- function mapping LongTensor of node ids to FloatTensor of feature values.
         cuda -- whether to use GPU
         """
-        super(SpaAggregator, self).__init__()
+        super(MeanAggregator1, self).__init__()
 
         self.id2feat = id2feat
         self.device=device
         self.id=id
+        self.W=nn.Linear(feature_dim,embed_dim)
 
-        self.weight=nn.Parameter(torch.FloatTensor(feature_dim,embed_dim))
-        self.bias=nn.Parameter(torch.FloatTensor(embed_dim))
-        init.xavier_uniform_(self.weight)
-        self.bias.data.zero_()
-
-    def forward(self, nodes, adj_list, num_sample):
+    def forward(self, nodes, to_neighs, num_sample):
         """
         nodes --- list of nodes in a batch
         dis --- shape alike adj
         to_neighs --- list of sets, each set is the set of neighbors for node in batch
         num_sample --- number of neighbors to sample. No sampling if None.
         """
-        _set = set  # a disordered non-repeatable list
-        to_neighs=[list(adj.keys()) for adj in adj_list]
+
         # sample neighbors
         if num_sample is not None:
-            _sample = random.sample
+
             samp_neighs = []
             for i, to_neigh in enumerate(to_neighs):
                 if len(to_neigh) > num_sample:
-                    samp_neighs.append(_set(_sample(to_neigh, num_sample)))
-                elif len(to_neigh)==0:
-                    samp_neighs.append({int(nodes[i])})
+                    samp_neighs.append(random.sample(to_neigh, num_sample))
                 else:
-                    samp_neighs.append(_set(to_neigh))
+                    samp_neighs.append(to_neigh)
             # samp_neighs = [_set(_sample(to_neigh, num_sample)) if len(to_neigh) >= num_sample
             #                else _set(to_neigh) for to_neigh in to_neighs]
         else:
             samp_neighs = to_neighs
 
         # ignore the unlinked nodes
+        tmp = []
+        for samp_neigh in samp_neighs:
+            for item in samp_neigh:
+                tmp.append(item)
 
-        unique_nodes_list = list(set.union(*samp_neighs))
+        unique_nodes_list = list(set(tmp))
         unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
         mask = Variable(torch.zeros(len(samp_neighs), len(unique_nodes))).to(self.device)
         column_indices = [unique_nodes[n] for samp_neigh in samp_neighs for n in samp_neigh]
@@ -192,38 +184,136 @@ class SpaAggregator(nn.Module):
         # spatial_transition = Variable(torch.FloatTensor(len(samp_neighs), len(unique_nodes)))
         # print(unique_nodes_list)
         # pdb.set_trace()
-        if self.id==1:
-            embed_matrix = self.id2feat[torch.LongTensor(unique_nodes_list).to(self.device)]  # （??, feat_dim)
-        else:
-            embed_matrix = self.id2feat(torch.LongTensor(unique_nodes_list).to(self.device))  # （??, feat_dim)
-        embed_matrix = embed_matrix.mm(self.weight)+ self.bias
+
+        embed_matrix = self.id2feat[torch.LongTensor(unique_nodes_list).to(self.device)]  # （??, feat_dim)
+        embed_matrix = self.W(embed_matrix)
         to_feats = mask.mm(embed_matrix)  # (?, num_sample)
         # print(torch.sum(torch.isnan(embed_matrix)))
         return to_feats  # (?, feat_dim)
 
+class AttnAggregator2(nn.Module):
+    def __init__(self,id2feat,device,feature_dim,embed_dim,num_sample):
+        super(AttnAggregator2,self).__init__()
+        self.id2feat=id2feat
+        self.num_sample=num_sample
+        self.W_Q=nn.Linear(feature_dim,embed_dim)
+        self.W_K=nn.Linear(feature_dim,embed_dim)
+        self.W_V=nn.Linear(feature_dim,embed_dim)
+        self.W=nn.Linear(2*feature_dim,embed_dim)
+    def forward(self,nodes,to_neighs,num_sample):
 
-class SageLayer(nn.Module):
+
+        self_feats=self.id2feat(nodes)
+        to_neighs=random.sample([list(to_neigh) for to_neigh in to_neighs],self.num_sample)
+        to_neighs=self.id2feat(torch.LongTensor(to_neighs))
+
+        Q=self.W_Q(self_feats)
+        K=self.W_K(to_neighs)
+        V=self.W_V(to_neighs)
+        attn_score=torch.mm(Q,K.transpose(1,0))
+        attn_score = F.softmax(attn_score,dim=-1)
+        neigh_feats=torch.matmul(attn_score.unsqueeze(0), V).squeeze(0)
+
+        return self_feats,neigh_feats
+
+
+class AttnAggregator1(nn.Module):
+    def __init__(self, id2feat, device, feature_dim, embed_dim,num_sample):
+        super(AttnAggregator1,self).__init__()
+        self.id2feat = id2feat
+        self.device=device
+        self.num_sample = num_sample
+        self.W_Q = nn.Linear(feature_dim, embed_dim)
+        self.W_K = nn.Linear(feature_dim, embed_dim)
+        self.W_V = nn.Linear(feature_dim, embed_dim)
+        self.W=nn.Linear(feature_dim,embed_dim)
+
+
+    def forward(self, nodes, to_neighs, num_sample):
+        # sample neighbors
+        if num_sample is not None:
+
+            samp_neighs = []
+            for i, to_neigh in enumerate(to_neighs):
+                if len(to_neigh) > num_sample:
+                    samp_neighs.append(random.sample(to_neigh, num_sample))
+                else:
+                    samp_neighs.append(to_neigh)
+            # samp_neighs = [_set(_sample(to_neigh, num_sample)) if len(to_neigh) >= num_sample
+            #                else _set(to_neigh) for to_neigh in to_neighs]
+        else:
+            samp_neighs = to_neighs
+
+        tmp=[]
+        for samp_neigh in samp_neighs:
+            tmp.append(self.id2feat[torch.LongTensor(samp_neigh).to(self.device)])
+        tmp=pad_sequence(tmp,batch_first=True,padding_value=0)
+
+
+        Q=self.W_Q(nodes)
+        K=self.W_K(tmp)
+        V=self.W_V(tmp)
+
+        attn_score=torch.mm(Q.unsqueeze(1),K.transpose(2,1)).squeeze(1)
+        mask = torch.zeros_like(attn_score).bool()
+
+        attn_score = F.softmax(attn_score.masked_fill(mask, float('-inf')), dim=-1)
+        neigh_feats = torch.matmul(attn_score.unsqueeze(1), V).squeeze(1)
+
+        self_feats=self.W(nodes)
+
+
+        return self_feats,neigh_feats
+
+class SageLayer1(nn.Module):
     """
     Encodes a node's using 'convolutional' GraphSage approach
     id2feat -- function mapping LongTensor of node ids to FloatTensor of feature values.
     cuda -- whether to use GPU
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
-    def __init__(self, id2feat, adj_list, context_sample_num, feature_dim,embed_dim, device, id):
-        super(SageLayer, self).__init__()
-        self.id=id
+    def __init__(self, id2feat, adj_list, dis_list,num_sample ,feature_dim, embed_dim, device):
+        super(SageLayer1, self).__init__()
         self.id2feat = id2feat
-        self.agg = SpaAggregator(self.id2feat,  device,id,feature_dim, embed_dim)
-        self.num_sample = context_sample_num
+        self.Meanagg = MeanAggregator1(self.id2feat, device,feature_dim, embed_dim,num_sample)
+        self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,embed_dim,num_sample)
+        self.num_sample = num_sample
         self.device=device
         self.adj_list = adj_list
-        self.weight = nn.Parameter(
-                torch.FloatTensor(feature_dim,embed_dim))
-        self.wc=nn.Parameter(torch.FloatTensor(embed_dim,2*embed_dim))
-        self.bias=nn.Parameter(torch.FloatTensor(embed_dim))
-        self.bias.data.zero_()
-        init.xavier_uniform_(self.weight)
-        init.xavier_uniform_(self.wc)
+        self.dis_list=dis_list
+        self.W=nn.Linear(embed_dim*3, embed_dim)
+
+    def forward(self, nodes):
+        """
+        Generates embeddings for a batch of nodes.
+        nodes     -- list of nodes
+        """
+        context_feats = self.Meanagg(nodes, [self.dis_list[int(node)] for node in nodes], self.num_sample)
+        neigh_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes],self.num_sample)
+        self_feats = self.id2feat[nodes]
+
+        combined = torch.cat((self_feats, neigh_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
+        # print(combined.shape)
+        combined = F.relu(self.W(combined))
+        # pdb.set_trace()
+        return combined
+
+class SageLayer2(nn.Module):
+    """
+    Encodes a node's using 'convolutional' GraphSage approach
+    id2feat -- function mapping LongTensor of node ids to FloatTensor of feature values.
+    cuda -- whether to use GPU
+    gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
+    """
+    def __init__(self, id2feat, adj_list, num_sample, embed_dim, device):
+        super(SageLayer2, self).__init__()
+        self.id=id
+        self.id2feat = id2feat
+        self.agg = AttnAggregator2(self.id2feat, device, embed_dim,num_sample)
+        self.num_sample = num_sample
+        self.device=device
+        self.adj_list = adj_list
+        self.W=nn.Linear(2*embed_dim,embed_dim)
 
     def forward(self, nodes):
         """
@@ -231,29 +321,22 @@ class SageLayer(nn.Module):
         nodes     -- list of nodes
         """
 
-        neigh_feats = self.agg(nodes, [self.adj_list[int(node)] for node in nodes], self.num_sample)
-        if self.id==1:
-            self_feats = self.id2feat[nodes]
-        else:
-            self_feats = self.id2feat(nodes)
-        self_feats=self_feats.mm(self.weight)+self.bias
-        combined = torch.cat((self_feats, neigh_feats), dim=1)  # (?, 2*feat_dim)
-        # print(combined.shape)
-        combined = F.relu(self.wc.mm(combined.t()))
-        # pdb.set_trace()
+        self_feats,neigh_feats= self.agg(nodes, [self.adj_list[int(node)] for node in nodes])
+        combined=self.W(torch.cat((self_feats,neigh_feats),dim=-1))
         return combined
 
+
 class GraphSage(nn.Module):
-    def __init__(self, X,num_node, context_sample_num, embed_dim, adj, device):
+    def __init__(self, X, num_node, num_sample, embed_dim, adj, dis, device):
         super(GraphSage, self).__init__()
         self.id2node = X
         self.device=device
-        self.layer1 = SageLayer(self.id2node, adj, context_sample_num,self.id2node.shape[1], embed_dim, device, 1)
-        self.layer12 = SageLayer(lambda nodes: self.layer1(nodes).t(), adj, context_sample_num,embed_dim, embed_dim, device, 2)
+        self.layer1 = SageLayer1(self.id2node, adj, dis, num_sample, self.id2node.shape[1], embed_dim, device)
+        self.layer2 = SageLayer2(lambda nodes: self.layer1(nodes), adj, num_sample, embed_dim, device)
 
 
     def forward(self, nodes):
-        neigh_embeds = self.layer12(torch.tensor(nodes).to(self.device)).t()  # (?, emb)
+        neigh_embeds = self.layer2(nodes)
         return neigh_embeds
 
 class TransformerModel(nn.Module):

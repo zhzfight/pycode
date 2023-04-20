@@ -24,6 +24,10 @@ def parameter_parser():
                         type=str,
                         default='dataset/NYC/graph_A.csv',
                         help='Graph adjacent path')
+    parser.add_argument('--geo-dis',
+                        type=int,
+                        default=500,
+                        help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--data-node-feats',
                         type=str,
                         default='dataset/NYC/graph_X.csv',
@@ -58,10 +62,10 @@ def parameter_parser():
                         type=int,
                         default=64,
                         help='sage embedding dimensions')
-    parser.add_argument('--context-sample-num',
+    parser.add_argument('--num-sample',
                         type=int,
                         default=10,
-                        help='context sample num')
+                        help='neighbor sample num')
     parser.add_argument('--user-embed-dim',
                         type=int,
                         default=128,
@@ -105,10 +109,6 @@ def parameter_parser():
     parser.add_argument('--time-loss-weight',
                         type=int,
                         default=10,
-                        help='Scale factor for the time loss term')
-    parser.add_argument('--context_loss-weight',
-                        type=int,
-                        default=20,
                         help='Scale factor for the time loss term')
     parser.add_argument('--node-attn-nhid',
                         type=int,
