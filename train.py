@@ -262,12 +262,11 @@ def train(args):
     cat_embed_model = CategoryEmbeddings(num_cats, args.cat_embed_dim)
 
     # %% Model5: Embedding fusion models
-    embed_fuse_model1 = FuseEmbeddings(args.user_embed_dim, args.poi_embed_dim)
+    embed_fuse_model1 = FuseEmbeddings(args.user_embed_dim, args.sage_embed_dim)
     embed_fuse_model2 = FuseEmbeddings(args.time_embed_dim, args.cat_embed_dim)
 
     # %% Model6: Sequence model
-    args.seq_input_embed = args.poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim + \
-        args.sage_embed_dim
+    args.seq_input_embed = args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim +args.sage_embed_dim
     seq_model = TransformerModel(num_pois,
                                  num_cats,
                                  args.seq_input_embed,
@@ -312,8 +311,8 @@ def train(args):
         # POI to embedding and fuse embeddings
         input_seq_embed = []
         for idx in range(len(input_seq)):
-            poi_embedding = sage_model(torch.tensor(input_seq[idx]).to(args.device))
-
+            poi_embedding = sage_model(input_seq[idx])
+            poi_embedding=torch.squeeze(poi_embedding).to(device=args.device)
             # Time to vector
             time_embedding = time_embed_model(
                 torch.tensor([input_seq_time[idx]], dtype=torch.float).to(device=args.device))

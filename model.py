@@ -156,7 +156,7 @@ class MeanAggregator1(nn.Module):
             if len(to_neigh) > self.num_sample:
                 samp_neighs.append(random.sample(to_neigh, self.num_sample))
             elif len(to_neigh)==0:
-                samp_neighs.append(int(nodes[i]))
+                samp_neighs.append([int(nodes[i])])
             else:
                 samp_neighs.append(to_neigh)
 
@@ -187,17 +187,17 @@ class MeanAggregator1(nn.Module):
         return to_feats  # n * embed_dim
 
 class AttnAggregator2(nn.Module):
-    def __init__(self,id2feat,device,feature_dim,embed_dim,num_sample):
+    def __init__(self,id2feat,device,embed_dim,num_sample):
         super(AttnAggregator2,self).__init__()
         self.id2feat=id2feat
         self.num_sample=num_sample
         self.device=device
-        self.W_Q=nn.Linear(feature_dim,embed_dim)
-        self.W_K=nn.Linear(feature_dim,embed_dim)
-        self.W_V=nn.Linear(feature_dim,embed_dim)
-    def forward(self,nodes,to_neighs):
+        self.W_Q=nn.Linear(embed_dim,embed_dim)
+        self.W_K=nn.Linear(embed_dim,embed_dim)
+        self.W_V=nn.Linear(embed_dim,embed_dim)
+    def forward(self, node, to_neighs):
 
-        self_feats=self.id2feat(nodes)
+        self_feats=self.id2feat([node])
         if len(to_neighs) > self.num_sample:
             to_neighs=random.sample(to_neighs, self.num_sample)
 
@@ -246,7 +246,7 @@ class AttnAggregator1(nn.Module):
         K=self.W_K(tmp) # n * L *embed_dim
         V=self.W_V(tmp)
 
-        attn_score=torch.mm(Q.unsqueeze(1),K.transpose(2,1)).squeeze(1) # n * L
+        attn_score=torch.bmm(Q.unsqueeze(1),K.transpose(2,1)).squeeze(1) # n * L
         mask = torch.zeros_like(attn_score).bool()
         for samp_neigh in samp_neighs:
             mask[:,len(samp_neigh):]=True
@@ -282,9 +282,9 @@ class SageLayer1(nn.Module):
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
+
         context_feats = self.Meanagg(nodes, [self.dis_list[int(node)] for node in nodes])
-        neigh_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes])
-        self_feats = self.id2feat[nodes]
+        self_feats,neigh_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes])
 
         combined = torch.cat((self_feats, neigh_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
         # print(combined.shape)
@@ -315,7 +315,7 @@ class SageLayer2(nn.Module):
         nodes     -- list of nodes
         """
 
-        self_feats,neigh_feats= self.agg(node, self.adj_list[int(node)])
+        self_feats,neigh_feats= self.agg(node, self.adj_list[node])
         combined=self.W(torch.cat((self_feats,neigh_feats),dim=-1))
         return combined
 
