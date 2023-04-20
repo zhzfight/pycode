@@ -216,7 +216,7 @@ class GRUModel(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src,batch_seq_lens,batch_input_seqs, X,A,batch_input_seqs_ts):
+    def forward(self, src,batch_seq_lens,batch_input_seqs, X,A):
         attns = torch.full((src.shape[0], src.shape[1], src.shape[1]), -1e9).to(self.device)
         attn_map = self.node_attn_model(X, A)
         # attn caculate
@@ -226,26 +226,11 @@ class GRUModel(nn.Module):
                 for k in range( j):
                     attns[i, j,k] = attn_map[traj_i_input[k], traj_i_input[j]]
 
-        timeIntervals=torch.zeros((src.shape[0],src.shape[1],src.shape[1])).to(self.device)
-        for i in range(len(batch_seq_lens)):
-            traj_i_ts_input = batch_input_seqs_ts[i]
-            for j in range(1,len(traj_i_ts_input)):
-                for k in range(j):
-                    timeIntervals[i,j,k]=traj_i_ts_input[j]-traj_i_ts_input[k]
-        mask = torch.where(timeIntervals != 0, torch.tensor(1), torch.tensor(0)).to(self.device)
-        etl=self.emb_tl(mask)
-        etu=self.emb_tu(mask)
-        vtl=timeIntervals.unsqueeze(-1).expand(-1, -1, -1, self.time_embed_size)
-        vtu=(self.tu - timeIntervals).unsqueeze(-1).expand(-1, -1, -1, self.time_embed_size)
-        time_interval = (etl * vtu + etu * vtl) /self.tu
-
         v0,indices=torch.max(attns,dim=-1)
-        for i in range(1,src.shape[1]):
-            v0[:,i]+=torch.sum(time_interval[np.arange(src.shape[0]),i, indices[:,i]],dim=-1)
 
         v1=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
         for i in range(1, src.shape[1]):
-            v1[:,i]=attns[:,i,i-1]+torch.sum(time_interval[:,i,i-1,:],dim=-1)
+            v1[:,i]=attns[:,i,i-1]
 
 
         v= torch.stack([v0, v1], dim=-1)

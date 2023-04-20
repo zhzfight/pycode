@@ -141,11 +141,10 @@ def train(args):
                 poi_ids = traj_df['POI_id'].to_list()
                 poi_idxs = [poi_id2idx_dict[each] for each in poi_ids]
                 time_feature = traj_df[args.time_feature].to_list()
-                ts=traj_df['timestamp'].to_list()
                 input_seq = []
                 label_seq = []
                 for i in range(len(poi_idxs) - 1):
-                    input_seq.append((poi_idxs[i], time_feature[i],ts[i]))
+                    input_seq.append((poi_idxs[i], time_feature[i]))
                     label_seq.append((poi_idxs[i + 1], time_feature[i + 1]))
 
                 if len(input_seq) < args.short_traj_thres:
@@ -181,7 +180,6 @@ def train(args):
                 poi_ids = traj_df['POI_id'].to_list()
                 poi_idxs = []
                 time_feature = traj_df[args.time_feature].to_list()
-                ts = traj_df['timestamp'].to_list()
                 for each in poi_ids:
                     if each in poi_id2idx_dict.keys():
                         poi_idxs.append(poi_id2idx_dict[each])
@@ -193,7 +191,7 @@ def train(args):
                 input_seq = []
                 label_seq = []
                 for i in range(len(poi_idxs) - 1):
-                    input_seq.append((poi_idxs[i], time_feature[i],ts[i]))
+                    input_seq.append((poi_idxs[i], time_feature[i]))
                     label_seq.append((poi_idxs[i + 1], time_feature[i + 1]))
 
                 # Ignore seq if too short
@@ -389,7 +387,6 @@ def train(args):
 
             # For padding
             batch_input_seqs = []
-            batch_input_seqs_ts=[]
             batch_seq_lens = []
             batch_seq_embeds = []
             batch_seq_labels_poi = []
@@ -412,7 +409,6 @@ def train(args):
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(input_seq))
                 batch_input_seqs.append(input_seq)
-                batch_input_seqs_ts.append(input_seq_ts)
                 batch_seq_labels_poi.append(torch.LongTensor(label_seq))
                 batch_seq_labels_time.append(torch.FloatTensor(label_seq_time))
                 batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
@@ -428,7 +424,7 @@ def train(args):
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
             y_time = label_padded_time.to(device=args.device, dtype=torch.float)
             y_cat = label_padded_cat.to(device=args.device, dtype=torch.long)
-            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs,X,A,batch_input_seqs_ts)
+            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs,X,A)
 
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
             loss_time = criterion_time(torch.squeeze(y_pred_time), y_time)
@@ -522,7 +518,6 @@ def train(args):
 
             # For padding
             batch_input_seqs = []
-            batch_input_seqs_ts = []
             batch_seq_lens = []
             batch_seq_embeds = []
             batch_seq_labels_poi = []
@@ -544,7 +539,6 @@ def train(args):
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(input_seq))
                 batch_input_seqs.append(input_seq)
-                batch_input_seqs_ts.append(input_seq_ts)
                 batch_seq_labels_poi.append(torch.LongTensor(label_seq))
                 batch_seq_labels_time.append(torch.FloatTensor(label_seq_time))
                 batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
@@ -560,7 +554,7 @@ def train(args):
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
             y_time = label_padded_time.to(device=args.device, dtype=torch.float)
             y_cat = label_padded_cat.to(device=args.device, dtype=torch.long)
-            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs,X,A,batch_input_seqs_ts)
+            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs,X,A)
 
             # Calculate loss
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
