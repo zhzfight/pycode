@@ -129,18 +129,17 @@ class MeanAggregator1(nn.Module):
     """
     Aggregates a node's embeddings using mean of neighbors' embeddings and transform
     """
-    def __init__(self, id2feat,  device,feature_dim,embed_dim,num_sample):
+    def __init__(self, id2feat,  device,num_sample,W,dropout):
         """
         features -- function mapping LongTensor of node ids to FloatTensor of feature values.
         cuda -- whether to use GPU
         """
         super(MeanAggregator1, self).__init__()
-
         self.id2feat = id2feat
         self.device=device
         self.num_sample=num_sample
-        self.W=nn.Linear(feature_dim,embed_dim)
-
+        self.W=W
+        self.dropout=nn.Dropout(dropout)
     def forward(self, nodes, to_neighs):
         """
         nodes --- list of nodes in a batch
@@ -180,10 +179,11 @@ class MeanAggregator1(nn.Module):
         embed_matrix = self.id2feat[torch.LongTensor(unique_nodes_list).to(self.device)]  # （unique_count, feat_dim)
         to_feats = mask.mm(embed_matrix)  # n * embed_dim
         to_feats=self.W(to_feats)
+        to_feats=self.dropout(to_feats)
         return to_feats  # n * embed_dim
 
 class AttnAggregator2(nn.Module):
-    def __init__(self,id2feat,device,embed_dim,num_sample):
+    def __init__(self,id2feat,device,embed_dim,num_sample,dropout):
         super(AttnAggregator2,self).__init__()
         self.id2feat=id2feat
         self.num_sample=num_sample
@@ -191,6 +191,7 @@ class AttnAggregator2(nn.Module):
         self.W_Q=nn.Linear(embed_dim,embed_dim)
         self.W_K=nn.Linear(embed_dim,embed_dim)
         self.W_V=nn.Linear(embed_dim,embed_dim)
+        self.dropout=nn.Dropout(dropout)
     def forward(self, node, to_neighs):
 
         self_feats=self.id2feat([node])
@@ -206,18 +207,22 @@ class AttnAggregator2(nn.Module):
         attn_score = F.softmax(attn_score,dim=-1) # 1 * neighs
         neigh_feats=torch.matmul(attn_score, V) # 1 * embed_dim
 
-        return self.W_V(self_feats),neigh_feats
+        self_feats=self.dropout(self_feats)
+        neigh_feats=self.dropout(neigh_feats)
+
+        return self_feats,neigh_feats
 
 
 class AttnAggregator1(nn.Module):
-    def __init__(self, id2feat, device, feature_dim, embed_dim,num_sample):
+    def __init__(self, id2feat, device, feature_dim, embed_dim,num_sample,W,dropout):
         super(AttnAggregator1,self).__init__()
         self.id2feat = id2feat
         self.device=device
         self.num_sample = num_sample
+        self.W=W
         self.W_Q = nn.Linear(feature_dim, embed_dim)
         self.W_K = nn.Linear(feature_dim, embed_dim)
-        self.W_V = nn.Linear(feature_dim, embed_dim)
+        self.dropout=nn.Dropout(dropout)
 
     def forward(self, nodes, to_neighs):
         # nodes n
@@ -238,7 +243,7 @@ class AttnAggregator1(nn.Module):
         nodes=self.id2feat[nodes] # n * feature_dim
         Q=self.W_Q(nodes) # n * embed_dim
         K=self.W_K(tmp) # n * L *embed_dim
-        V=self.W_V(tmp)
+        V=self.W(tmp)
 
         attn_score=torch.bmm(Q.unsqueeze(1),K.transpose(2,1)).squeeze(1) # n * L
         mask = torch.zeros_like(attn_score).bool()
@@ -248,8 +253,9 @@ class AttnAggregator1(nn.Module):
         attn_score = F.softmax(attn_score.masked_fill(mask, float('-inf')), dim=-1)
         neigh_feats = torch.matmul(attn_score.unsqueeze(1), V).squeeze(1) # (n * 1 * L) (n * L * embed_dim) = (n * 1 * embed_dim)
 
-        self_feats=self.W_V(nodes) # n * embed_dim
-
+        self_feats=self.W(nodes) # n * embed_dim
+        self_feats=self.dropout(self_feats)
+        neigh_feats=self.dropout(neigh_feats)
 
         return self_feats,neigh_feats
 
@@ -264,13 +270,14 @@ class SageLayer1(nn.Module):
         super(SageLayer1, self).__init__()
         self.id2feat = id2feat
         self.dropout=dropout
-        self.Meanagg = MeanAggregator1(self.id2feat, device,feature_dim, embed_dim/3,num_sample)
-        self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,embed_dim/3,num_sample)
+        self.W=nn.Linear(feature_dim,int(embed_dim/3))
+        self.Meanagg = MeanAggregator1(self.id2feat, device,num_sample,self.W,dropout)
+        self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,int(embed_dim/3),num_sample,self.W,dropout)
         self.num_sample = num_sample
         self.device=device
         self.adj_list = adj_list
         self.dis_list=dis_list
-
+        self.WC=nn.Linear(embed_dim,embed_dim)
     def forward(self, nodes):
         """
         Generates embeddings for a batch of nodes.
@@ -280,7 +287,7 @@ class SageLayer1(nn.Module):
         self_feats,neigh_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes])
 
         combined = torch.cat((self_feats, neigh_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
-        combined = self.dropout(combined)
+        combined=F.relu(self.WC(combined))
         return combined
 
 class SageLayer2(nn.Module):
@@ -294,11 +301,11 @@ class SageLayer2(nn.Module):
         super(SageLayer2, self).__init__()
         self.id=id
         self.id2feat = id2feat
-        self.agg = AttnAggregator2(self.id2feat, device, embed_dim/2,num_sample)
+        self.agg = AttnAggregator2(self.id2feat, device, int(embed_dim/2),num_sample,dropout)
         self.num_sample = num_sample
         self.device=device
         self.adj_list = adj_list
-        self.dropout=nn.Dropout(dropout)
+
 
     def forward(self, node):
         """
@@ -308,7 +315,6 @@ class SageLayer2(nn.Module):
 
         self_feats,neigh_feats= self.agg(node, self.adj_list[node])
         combined=torch.cat((self_feats,neigh_feats),dim=-1)
-        combined=self.dropout(combined)
         return combined
 
 
@@ -317,7 +323,7 @@ class GraphSage(nn.Module):
         super(GraphSage, self).__init__()
         self.id2node = X
         self.device=device
-        self.layer1 = SageLayer1(self.id2node, adj, dis, num_sample, self.id2node.shape[1], embed_dim/2, device,dropout)
+        self.layer1 = SageLayer1(self.id2node, adj, dis, num_sample, self.id2node.shape[1], int(embed_dim/2), device,dropout)
         self.layer2 = SageLayer2(lambda nodes: self.layer1(nodes), adj, num_sample, embed_dim, device,dropout)
 
 

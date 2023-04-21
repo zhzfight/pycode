@@ -56,7 +56,7 @@ def parameter_parser():
 
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=240,
+                        default=300,
                         help='sage embedding dimensions')
     parser.add_argument('--num-sample',
                         type=int,
@@ -72,7 +72,7 @@ def parameter_parser():
                         help='Dropout rate for gcn')
     parser.add_argument('--sage-dropout',
                         type=float,
-                        default=0.3,
+                        default=0.1,
                         help='Dropout rate for sage')
     parser.add_argument('--gcn-nhid',
                         type=list,
