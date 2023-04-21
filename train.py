@@ -262,7 +262,7 @@ def train(args):
     cat_embed_model = CategoryEmbeddings(num_cats, args.cat_embed_dim)
 
     # %% Model5: Embedding fusion models
-    embed_fuse_model1 = FuseEmbeddings(args.user_embed_dim, args.sage_embed_dim)
+
     embed_fuse_model2 = FuseEmbeddings(args.time_embed_dim, args.cat_embed_dim)
 
     # %% Model6: Sequence model
@@ -280,7 +280,6 @@ def train(args):
                                   list(user_embed_model.parameters()) +
                                   list(time_embed_model.parameters()) +
                                   list(cat_embed_model.parameters()) +
-                                  list(embed_fuse_model1.parameters()) +
                                   list(embed_fuse_model2.parameters()) +
                                   list(seq_model.parameters()),
                            lr=args.lr,
@@ -324,11 +323,11 @@ def train(args):
             cat_embedding = torch.squeeze(cat_embedding)
 
             # Fuse user+poi embeds
-            fused_embedding1 = embed_fuse_model1(user_embedding, poi_embedding)
+
             fused_embedding2 = embed_fuse_model2(time_embedding, cat_embedding)
 
             # Concat time, cat after user+poi
-            concat_embedding = torch.cat((fused_embedding1, fused_embedding2), dim=-1)
+            concat_embedding = torch.cat((user_embedding,poi_embedding, fused_embedding2), dim=-1)
 
             # Save final embed
             input_seq_embed.append(concat_embedding)
@@ -342,7 +341,6 @@ def train(args):
     user_embed_model = user_embed_model.to(device=args.device)
     time_embed_model = time_embed_model.to(device=args.device)
     cat_embed_model = cat_embed_model.to(device=args.device)
-    embed_fuse_model1 = embed_fuse_model1.to(device=args.device)
     embed_fuse_model2 = embed_fuse_model2.to(device=args.device)
     seq_model = seq_model.to(device=args.device)
 
@@ -376,7 +374,6 @@ def train(args):
         user_embed_model.train()
         time_embed_model.train()
         cat_embed_model.train()
-        embed_fuse_model1.train()
         embed_fuse_model2.train()
         seq_model.train()
         sage_model.train()
@@ -519,7 +516,6 @@ def train(args):
         user_embed_model.eval()
         time_embed_model.eval()
         cat_embed_model.eval()
-        embed_fuse_model1.eval()
         embed_fuse_model2.eval()
         seq_model.eval()
         sage_model.eval()
