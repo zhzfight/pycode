@@ -448,7 +448,7 @@ def train(args):
             # Final loss
             loss = loss_poi + loss_time * args.time_loss_weight + loss_cat
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward(retain_graph=True)
             optimizer.step()
 
             # Performance measurement
@@ -610,7 +610,7 @@ def train(args):
             val_batches_time_loss_list.append(loss_time.detach().cpu().numpy())
             val_batches_cat_loss_list.append(loss_cat.detach().cpu().numpy())
             # Report validation progress
-            if (vb_idx % (20)) == 0:
+            if (vb_idx % (5)) == 0:
                 sample_idx = 0
                 batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                 logging.info(f'Epoch:{epoch}, batch:{vb_idx}, '
