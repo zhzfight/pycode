@@ -155,8 +155,6 @@ class MeanAggregator1(nn.Module):
         for i, to_neigh in enumerate(to_neighs):
             if len(to_neigh) > self.num_sample:
                 samp_neighs.append(random.sample(to_neigh, self.num_sample))
-            elif len(to_neigh)==0:
-                samp_neighs.append([int(nodes[i])])
             else:
                 samp_neighs.append(to_neigh)
 
