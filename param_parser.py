@@ -56,15 +56,15 @@ def parameter_parser():
 
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=300,
+                        default=128,
                         help='sage embedding dimensions')
     parser.add_argument('--adj-num-sample',
                         type=int,
-                        default=12,
+                        default=10,
                         help='adj neighbor sample num')
     parser.add_argument('--context-num-sample',
                         type=int,
-                        default=46,
+                        default=25,
                         help='context neighbor sample num')
     parser.add_argument('--user-embed-dim',
                         type=int,

@@ -246,6 +246,7 @@ class SageLayer1(nn.Module):
         self.adj_list = adj_list
         self.dis_list=dis_list
         self.WC=nn.Linear(2*embed_dim,embed_dim)
+        self.leakyRelu=nn.LeakyReLU(0.2)
 
     def forward(self, nodes):
         """
@@ -256,8 +257,9 @@ class SageLayer1(nn.Module):
         mix_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes])
 
         combined = torch.cat((mix_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
-        combined=F.tanh(self.WC(combined))
+        combined=self.leakyRelu(self.WC(combined))
         combined=F.normalize(combined,p=2,dim=-1)
+        combined=F.dropout(combined,p=self.dropout,training=self.training)
         return combined
 
 
@@ -300,6 +302,8 @@ class SageLayer2(nn.Module):
         self.agg = AttnAggregator2(self.id2feat, device, embed_dim, adj_num_sample, dropout)
         self.device=device
         self.adj_list = adj_list
+        self.leakyRelu=nn.LeakyReLU(0.2)
+        self.dropout=dropout
     def forward(self, node):
         """
         Generates embeddings for a batch of nodes.
@@ -307,9 +311,9 @@ class SageLayer2(nn.Module):
         """
 
         feats= self.agg(node, self.adj_list[node])
-        feats=F.tanh(feats)
+        feats=self.leakyRelu(feats)
         feats=F.normalize(feats,p=2,dim=-1)
-
+        feats=F.dropout(feats,p=self.dropout,training=self.training)
         return feats
 
 
