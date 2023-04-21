@@ -13,7 +13,7 @@ def parameter_parser():
     parser = argparse.ArgumentParser(description="Run GETNext.")
     parser.add_argument('--seed',
                         type=int,
-                        default=777,
+                        default=33,
                         help='Random seed')
     parser.add_argument('--device',
                         type=str,
@@ -60,7 +60,7 @@ def parameter_parser():
                         help='sage embedding dimensions')
     parser.add_argument('--num-sample',
                         type=int,
-                        default=15,
+                        default=10,
                         help='neighbor sample num')
     parser.add_argument('--user-embed-dim',
                         type=int,

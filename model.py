@@ -179,9 +179,8 @@ class MeanAggregator1(nn.Module):
 
 
         embed_matrix = self.id2feat[torch.LongTensor(unique_nodes_list).to(self.device)]  # （unique_count, feat_dim)
-        embed_matrix = self.W(embed_matrix) # unique_count * embed_dim
         to_feats = mask.mm(embed_matrix)  # n * embed_dim
-
+        to_feats=self.W(to_feats)
         return to_feats  # n * embed_dim
 
 class AttnAggregator2(nn.Module):
