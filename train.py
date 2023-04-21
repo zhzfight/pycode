@@ -430,10 +430,7 @@ def train(args):
             label_padded_poi = pad_sequence(batch_seq_labels_poi, batch_first=True, padding_value=-1)
             label_padded_time = pad_sequence(batch_seq_labels_time, batch_first=True, padding_value=-1)
             label_padded_cat = pad_sequence(batch_seq_labels_cat, batch_first=True, padding_value=-1)
-            #label_padded_context=pad_sequence(batch_seq_labels_context,batch_first=True,padding_value=0)
 
-            #mask = torch.arange(batch_padded.shape[1]).unsqueeze(0).unsqueeze(-1) < torch.tensor(batch_seq_lens).unsqueeze(-1).unsqueeze(-1)
-            #mask=mask.to(args.device)
 
 
             # Feedforward

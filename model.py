@@ -181,32 +181,7 @@ class MeanAggregator1(nn.Module):
         to_feats = mask.mm(embed_matrix)  # n * embed_dim
         return to_feats  # n * embed_dim
 
-class AttnAggregator2(nn.Module):
-    def __init__(self,id2feat,device,embed_dim,num_sample,dropout):
-        super(AttnAggregator2,self).__init__()
-        self.id2feat=id2feat
-        self.num_sample=num_sample
-        self.device=device
-        self.W_Q=nn.Linear(embed_dim,embed_dim)
-        self.W_K=nn.Linear(embed_dim,embed_dim)
-        self.W_V=nn.Linear(embed_dim,embed_dim)
-        self.dropout=nn.Dropout(dropout)
-    def forward(self, node, to_neighs):
 
-        self_feats=self.id2feat([node])
-        if len(to_neighs) > self.num_sample:
-            to_neighs=random.sample(to_neighs, self.num_sample)
-
-        samp_neighs=self.id2feat(torch.LongTensor(to_neighs).to(self.device))
-
-        Q=self.W_Q(self_feats)   # 1 * embed_dim
-        K=self.W_K(torch.cat((self_feats,samp_neighs),dim=0))  # neighs * embed_dim
-        V=self.W_V(torch.cat((self_feats,samp_neighs),dim=0))  # neighs * embed_dim
-        attn_score=torch.mm(Q,K.transpose(1,0)) # 1 * neighs
-        attn_score = F.softmax(attn_score,dim=-1) # 1 * neighs
-        mix_feats=torch.matmul(attn_score, V) # 1 * embed_dim
-
-        return mix_feats
 
 
 class AttnAggregator1(nn.Module):
@@ -272,9 +247,7 @@ class SageLayer1(nn.Module):
         self.adj_list = adj_list
         self.dis_list=dis_list
         self.WC=nn.Linear(2*embed_dim,embed_dim)
-        initrange = 0.1
-        self.WC.bias.data.zero_()
-        self.WC.weight.data.uniform_(-initrange, initrange)
+
     def forward(self, nodes):
         """
         Generates embeddings for a batch of nodes.
@@ -284,9 +257,37 @@ class SageLayer1(nn.Module):
         mix_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes])
 
         combined = torch.cat((mix_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
-        combined=F.relu(self.WC(combined))
+        combined=F.tanh(self.WC(combined))
+        combined=F.normalize(combined,p=2,dim=-1)
         return combined
 
+
+class AttnAggregator2(nn.Module):
+    def __init__(self,id2feat,device,embed_dim,num_sample,dropout):
+        super(AttnAggregator2,self).__init__()
+        self.id2feat=id2feat
+        self.num_sample=num_sample
+        self.device=device
+        self.W_Q=nn.Linear(embed_dim,embed_dim)
+        self.W_K=nn.Linear(embed_dim,embed_dim)
+        self.W_V=nn.Linear(embed_dim,embed_dim)
+        self.dropout=nn.Dropout(dropout)
+    def forward(self, node, to_neighs):
+
+        self_feats=self.id2feat([node])
+        if len(to_neighs) > self.num_sample:
+            to_neighs=random.sample(to_neighs, self.num_sample)
+
+        samp_neighs=self.id2feat(torch.LongTensor(to_neighs).to(self.device))
+
+        Q=self.W_Q(self_feats)   # 1 * embed_dim
+        K=self.W_K(torch.cat((self_feats,samp_neighs),dim=0))  # neighs * embed_dim
+        V=self.W_V(torch.cat((self_feats,samp_neighs),dim=0))  # neighs * embed_dim
+        attn_score=torch.mm(Q,K.transpose(1,0)) # 1 * neighs
+        attn_score = F.softmax(attn_score,dim=-1) # 1 * neighs
+        mix_feats=torch.matmul(attn_score, V) # 1 * embed_dim
+
+        return mix_feats
 class SageLayer2(nn.Module):
     """
     Encodes a node's using 'convolutional' GraphSage approach
@@ -308,7 +309,9 @@ class SageLayer2(nn.Module):
         """
 
         feats= self.agg(node, self.adj_list[node])
-        feats=F.relu(feats)
+        feats=F.tanh(feats)
+        feats=F.normalize(feats,p=2,dim=-1)
+
         return feats
 
 
@@ -323,6 +326,7 @@ class GraphSage(nn.Module):
 
     def forward(self, nodes):
         neigh_embeds = self.layer2(nodes)
+
         return neigh_embeds
 
 class TransformerModel(nn.Module):
@@ -333,12 +337,10 @@ class TransformerModel(nn.Module):
         self.pos_encoder = PositionalEncoding(embed_size, dropout)
         encoder_layers = TransformerEncoderLayer(embed_size, nhead, nhid, dropout)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
-        # self.encoder = nn.Embedding(num_poi, embed_size)
         self.embed_size = embed_size
         self.decoder_poi = nn.Linear(embed_size, num_poi)
         self.decoder_time = nn.Linear(embed_size, 1)
         self.decoder_cat = nn.Linear(embed_size, num_cat)
-        #self.decoder_context=nn.Linear(embed_size,num_poi)
         self.init_weights()
 
     def generate_square_subsequent_mask(self, sz):
@@ -358,10 +360,6 @@ class TransformerModel(nn.Module):
         out_poi = self.decoder_poi(x)
         out_time = self.decoder_time(x)
         out_cat = self.decoder_cat(x)
-        #out_context=self.decoder_context(x)
 
-
-
-        #return out_poi, out_time, out_cat,out_context
 
         return out_poi, out_time, out_cat
