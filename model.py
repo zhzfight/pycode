@@ -285,7 +285,7 @@ class SageLayer1(nn.Module):
 
         combined = torch.cat((self_feats, neigh_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
         # print(combined.shape)
-        combined = F.relu(self.W(combined))
+        combined = F.tanh(self.W(combined))
         # pdb.set_trace()
         return combined
 
@@ -314,7 +314,7 @@ class SageLayer2(nn.Module):
 
         self_feats,neigh_feats= self.agg(node, self.adj_list[node])
         combined=torch.cat((self_feats,neigh_feats),dim=-1)
-        combined=F.relu(self.W(combined))
+        combined=F.tanh(self.W(combined))
         return combined
 
 
