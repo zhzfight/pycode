@@ -17,16 +17,14 @@ geod = Geodesic.WGS84
 def get_node_geo_context_neighbors(index, nodes, geo_dis):
     neighbors = []
     for i in range(len(nodes)):
-        if i==index:
-            continue
         if geod.Inverse(nodes[i][1], nodes[i][0], nodes[index][1], nodes[index][0])['s12']<=geo_dis:
             neighbors.append(i)
     return neighbors
 # 定义一个函数，获取所有节点的邻居列表
 def get_all_nodes_neighbors(nodes,geo_dis):
-    result = [set() for _ in range(len(nodes))]
+    result = [[] for _ in range(len(nodes))]
     for i in range(len(nodes)):
-        result[i].update(get_node_geo_context_neighbors(i, nodes, geo_dis))
+        result[i]=get_node_geo_context_neighbors(i, nodes, geo_dis)
     return result
 
 def adj_list(raw_A,raw_X,geo_dis):
@@ -34,7 +32,7 @@ def adj_list(raw_A,raw_X,geo_dis):
     raw_X=np.copy(raw_X)
     # 假设邻接矩阵是一个二维数组matrix
     n = len(raw_A)  # 邻接矩阵的行数和列数
-    adj_list = [set() for _ in range(n)]
+    adj_list = [[] for _ in range(n)]
     # 如果要将有向图转换为无向图
     for i in range(n):  # 遍历每一行
         for j in range(i + 1, n):  # 遍历对角线上方的每一列
@@ -43,8 +41,10 @@ def adj_list(raw_A,raw_X,geo_dis):
                 raw_A[j][i] = raw_A[i][j]  # 更新下方的元素
     for i in range(n):
         for j in range(n):
+            if i==j:
+                continue
             if raw_A[i][j] > 0:
-                adj_list[i].add(j)
+                adj_list[i].append(j)
 
     nodes = [tuple(row) for row in np.asarray(raw_X[:, [3,2]])]
     dis =get_all_nodes_neighbors(nodes,geo_dis)
