@@ -228,10 +228,11 @@ class GRUModel(nn.Module):
 
         hid = self.h0.repeat(src.shape[0], 1).to(self.device)
         x = torch.zeros((src.shape[0],src.shape[1],self.nhid)).to(self.device)
-
+        output = torch.zeros((src.shape[0], src.shape[1], self.nhid)).to(self.device)
         for i in range(src.shape[1]):
             hid = self.grucell(src[:, 0, :], hid)
-            x[:, 0, :] = hid
+            output[:, 0, :] = hid
+        x[:,0,:]=output[:,0,:]
 
 
 
