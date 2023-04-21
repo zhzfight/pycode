@@ -204,6 +204,11 @@ class GRUModel(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
+        self.W_H = nn.Parameter(torch.FloatTensor(nhid,nhid))
+        self.W_X = nn.Parameter(torch.FloatTensor(embed_size,nhid))
+        self.bias = nn.Parameter(torch.FloatTensor(1, nhid))
+
+
         self.init_weights()
 
 
