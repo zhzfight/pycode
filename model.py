@@ -235,14 +235,13 @@ class SageLayer1(nn.Module):
     cuda -- whether to use GPU
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
-    def __init__(self, id2feat, adj_list, dis_list,num_sample ,feature_dim, embed_dim, device,dropout):
+    def __init__(self, id2feat, adj_list, dis_list,context_num_sample,adj_num_sample ,feature_dim, embed_dim, device,dropout):
         super(SageLayer1, self).__init__()
         self.id2feat = id2feat
         self.dropout=dropout
 
-        self.Meanagg = MeanAggregator1(self.id2feat, device,feature_dim,embed_dim,num_sample,dropout)
-        self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,embed_dim,num_sample,dropout)
-        self.num_sample = num_sample
+        self.Meanagg = MeanAggregator1(self.id2feat, device,feature_dim,embed_dim,context_num_sample,dropout)
+        self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,embed_dim,adj_num_sample,dropout)
         self.device=device
         self.adj_list = adj_list
         self.dis_list=dis_list
@@ -295,11 +294,10 @@ class SageLayer2(nn.Module):
     cuda -- whether to use GPU
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
-    def __init__(self, id2feat, adj_list, num_sample, embed_dim, device,dropout):
+    def __init__(self, id2feat, adj_list, adj_num_sample, embed_dim, device, dropout):
         super(SageLayer2, self).__init__()
         self.id2feat = id2feat
-        self.agg = AttnAggregator2(self.id2feat, device, embed_dim,num_sample,dropout)
-        self.num_sample = num_sample
+        self.agg = AttnAggregator2(self.id2feat, device, embed_dim, adj_num_sample, dropout)
         self.device=device
         self.adj_list = adj_list
     def forward(self, node):
@@ -316,12 +314,12 @@ class SageLayer2(nn.Module):
 
 
 class GraphSage(nn.Module):
-    def __init__(self, X, num_node, num_sample, embed_dim, adj, dis, device,dropout):
+    def __init__(self, X, num_node, context_num_smaple,adj_num_sample, embed_dim, adj, dis, device,dropout):
         super(GraphSage, self).__init__()
         self.id2node = X
         self.device=device
-        self.layer1 = SageLayer1(self.id2node, adj, dis, num_sample, self.id2node.shape[1], embed_dim, device,dropout)
-        self.layer2 = SageLayer2(lambda nodes: self.layer1(nodes), adj, num_sample, embed_dim, device,dropout)
+        self.layer1 = SageLayer1(self.id2node, adj, dis, context_num_smaple,adj_num_sample, self.id2node.shape[1], embed_dim, device,dropout)
+        self.layer2 = SageLayer2(lambda nodes: self.layer1(nodes), adj, adj_num_sample, embed_dim, device,dropout)
 
 
     def forward(self, nodes):
