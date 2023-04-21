@@ -239,8 +239,8 @@ class AttnAggregator1(nn.Module):
 
         self_feats=self.id2feat[nodes] # n * feature_dim
         Q=self.W_Q(self_feats) # n * embed_dim
-        K=self.W_K(torch.cat((tmp,self_feats),dim=1)) # n * L *embed_dim
-        V=self.W_V(torch.cat((tmp,self_feats),dim=1))
+        K=self.W_K(torch.cat((tmp,self_feats.unsqueeze(1)),dim=1)) # n * L *embed_dim
+        V=self.W_V(torch.cat((tmp,self_feats.unsqueeze(1)),dim=1))
 
         attn_score=torch.bmm(Q.unsqueeze(1),K.transpose(2,1)).squeeze(1) # n * L
         mask = torch.zeros_like(attn_score).bool()
@@ -264,16 +264,15 @@ class SageLayer1(nn.Module):
         super(SageLayer1, self).__init__()
         self.id2feat = id2feat
         self.dropout=dropout
-        initrange = 0.1
-        self.W.bias.data.zero_()
-        self.W.weight.data.uniform_(-initrange, initrange)
-        self.Meanagg = MeanAggregator1(self.id2feat, device,embed_dim,num_sample,dropout)
+
+        self.Meanagg = MeanAggregator1(self.id2feat, device,feature_dim,embed_dim,num_sample,dropout)
         self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,embed_dim,num_sample,dropout)
         self.num_sample = num_sample
         self.device=device
         self.adj_list = adj_list
         self.dis_list=dis_list
-        self.WC=nn.Linear(embed_dim,embed_dim)
+        self.WC=nn.Linear(2*embed_dim,embed_dim)
+        initrange = 0.1
         self.WC.bias.data.zero_()
         self.WC.weight.data.uniform_(-initrange, initrange)
     def forward(self, nodes):
