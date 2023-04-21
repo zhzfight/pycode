@@ -138,7 +138,6 @@ class MeanAggregator1(nn.Module):
 
         self.id2feat = id2feat
         self.device=device
-        self.id=id
         self.num_sample=num_sample
         self.W=nn.Linear(feature_dim,embed_dim)
 
@@ -207,7 +206,7 @@ class AttnAggregator2(nn.Module):
         attn_score = F.softmax(attn_score,dim=-1) # 1 * neighs
         neigh_feats=torch.matmul(attn_score, V) # 1 * embed_dim
 
-        return self_feats,neigh_feats
+        return self.W_V(self_feats),neigh_feats
 
 
 class AttnAggregator1(nn.Module):
@@ -219,8 +218,6 @@ class AttnAggregator1(nn.Module):
         self.W_Q = nn.Linear(feature_dim, embed_dim)
         self.W_K = nn.Linear(feature_dim, embed_dim)
         self.W_V = nn.Linear(feature_dim, embed_dim)
-        self.W=nn.Linear(feature_dim,embed_dim)
-
 
     def forward(self, nodes, to_neighs):
         # nodes n
@@ -251,7 +248,7 @@ class AttnAggregator1(nn.Module):
         attn_score = F.softmax(attn_score.masked_fill(mask, float('-inf')), dim=-1)
         neigh_feats = torch.matmul(attn_score.unsqueeze(1), V).squeeze(1) # (n * 1 * L) (n * L * embed_dim) = (n * 1 * embed_dim)
 
-        self_feats=self.W(nodes) # n * embed_dim
+        self_feats=self.W_V(nodes) # n * embed_dim
 
 
         return self_feats,neigh_feats
@@ -263,30 +260,27 @@ class SageLayer1(nn.Module):
     cuda -- whether to use GPU
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
-    def __init__(self, id2feat, adj_list, dis_list,num_sample ,feature_dim, embed_dim, device):
+    def __init__(self, id2feat, adj_list, dis_list,num_sample ,feature_dim, embed_dim, device,dropout):
         super(SageLayer1, self).__init__()
         self.id2feat = id2feat
-        self.Meanagg = MeanAggregator1(self.id2feat, device,feature_dim, embed_dim,num_sample)
-        self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,embed_dim,num_sample)
+        self.dropout=dropout
+        self.Meanagg = MeanAggregator1(self.id2feat, device,feature_dim, embed_dim/3,num_sample)
+        self.Attnagg = AttnAggregator1(self.id2feat,device,feature_dim,embed_dim/3,num_sample)
         self.num_sample = num_sample
         self.device=device
         self.adj_list = adj_list
         self.dis_list=dis_list
-        self.W=nn.Linear(embed_dim*3, embed_dim)
 
     def forward(self, nodes):
         """
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
-
         context_feats = self.Meanagg(nodes, [self.dis_list[int(node)] for node in nodes])
         self_feats,neigh_feats=self.Attnagg(nodes,[self.adj_list[int(node)] for node in nodes])
 
         combined = torch.cat((self_feats, neigh_feats,context_feats), dim=-1)  # (?, 2*feat_dim)
-        # print(combined.shape)
-        combined = F.tanh(self.W(combined))
-        # pdb.set_trace()
+        combined = self.dropout(combined)
         return combined
 
 class SageLayer2(nn.Module):
@@ -296,15 +290,15 @@ class SageLayer2(nn.Module):
     cuda -- whether to use GPU
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
-    def __init__(self, id2feat, adj_list, num_sample, embed_dim, device):
+    def __init__(self, id2feat, adj_list, num_sample, embed_dim, device,dropout):
         super(SageLayer2, self).__init__()
         self.id=id
         self.id2feat = id2feat
-        self.agg = AttnAggregator2(self.id2feat, device, embed_dim,num_sample)
+        self.agg = AttnAggregator2(self.id2feat, device, embed_dim/2,num_sample)
         self.num_sample = num_sample
         self.device=device
         self.adj_list = adj_list
-        self.W=nn.Linear(2*embed_dim,embed_dim)
+        self.dropout=nn.Dropout(dropout)
 
     def forward(self, node):
         """
@@ -314,17 +308,17 @@ class SageLayer2(nn.Module):
 
         self_feats,neigh_feats= self.agg(node, self.adj_list[node])
         combined=torch.cat((self_feats,neigh_feats),dim=-1)
-        combined=F.tanh(self.W(combined))
+        combined=self.dropout(combined)
         return combined
 
 
 class GraphSage(nn.Module):
-    def __init__(self, X, num_node, num_sample, embed_dim, adj, dis, device):
+    def __init__(self, X, num_node, num_sample, embed_dim, adj, dis, device,dropout):
         super(GraphSage, self).__init__()
         self.id2node = X
         self.device=device
-        self.layer1 = SageLayer1(self.id2node, adj, dis, num_sample, self.id2node.shape[1], embed_dim, device)
-        self.layer2 = SageLayer2(lambda nodes: self.layer1(nodes), adj, num_sample, embed_dim, device)
+        self.layer1 = SageLayer1(self.id2node, adj, dis, num_sample, self.id2node.shape[1], embed_dim/2, device,dropout)
+        self.layer2 = SageLayer2(lambda nodes: self.layer1(nodes), adj, num_sample, embed_dim, device,dropout)
 
 
     def forward(self, nodes):

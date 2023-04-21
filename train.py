@@ -249,7 +249,7 @@ def train(args):
     args.gcn_nfeat = X.shape[1]
 
     sage_model=GraphSage(X=X, num_node=num_pois, num_sample=args.num_sample, embed_dim=args.sage_embed_dim,
-                         adj=adj, dis=dis, device=args.device)
+                         adj=adj, dis=dis, device=args.device,dropout=args.sage_dropout)
 
     # %% Model2: User embedding model, nn.embedding
     num_users = len(user_id2idx_dict)
