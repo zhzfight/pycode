@@ -313,7 +313,8 @@ class SageLayer2(nn.Module):
         """
 
         self_feats,neigh_feats= self.agg(node, self.adj_list[node])
-        combined=self.W(torch.cat((self_feats,neigh_feats),dim=-1))
+        combined=torch.cat((self_feats,neigh_feats),dim=-1)
+        combined=F.relu(self.W(combined))
         return combined
 
 
