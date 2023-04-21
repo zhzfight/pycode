@@ -225,31 +225,15 @@ class GRUModel(nn.Module):
                     attns[i, j,k] = attn_map[traj_i_input[k], traj_i_input[j]]
 
 
-        v0,indices=torch.max(attns,dim=-1)
-
-        v1=torch.zeros((src.shape[0],src.shape[1])).to(self.device)
-        for i in range(1, src.shape[1]):
-            v1[:,i]=attns[:,i,i-1]
-
-
-        v= torch.stack([v0, v1], dim=-1)
-        v = torch.nn.functional.softmax(v, dim=-1)
-
 
         hid = self.h0.repeat(src.shape[0], 1).to(self.device)
         x = torch.zeros((src.shape[0],src.shape[1],self.nhid)).to(self.device)
-        hid = self.grucell(src[:,0,:],hid)
-        x[:,0,:]=hid
-        for i in range(1,src.shape[1]):
-            hid1 = self.grucell(src[:, i, :], hid)
-            hid2 = self.grucell(src[:,i,:],x[np.arange(x.shape[0]), indices[:, i]])
+
+        for i in range(src.shape[1]):
+            hid = self.grucell(src[:, 0, :], hid)
+            x[:, 0, :] = hid
 
 
-            alpha1=v[:,i,0].unsqueeze(-1).repeat(1,self.nhid)
-            alpha2=v[:,i,1].unsqueeze(-1).repeat(1,self.nhid)
-            hid = torch.mul(alpha1,hid1)+torch.mul(alpha2,hid2)
-            hid=self.dropout(hid)
-            x[:,i,:]=hid
 
 
         out_poi = self.decoder_poi(x)
