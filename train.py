@@ -208,7 +208,7 @@ def train(args):
                 if len(input_seq) < args.short_traj_thres:
                     continue
                 # ignore those poi without neighbor
-                if len(set([each[0] for each in input_seq])) < 2:
+                if set(input_seq) & set(no_neighbor):
                     continue
 
                 self.input_seqs.append(input_seq)
