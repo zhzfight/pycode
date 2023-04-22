@@ -11,19 +11,78 @@ from scipy.sparse.linalg import eigsh
 import torch.nn.functional as F
 import random
 from geographiclib.geodesic import Geodesic
+from tqdm import tqdm
 geod = Geodesic.WGS84
 
+
+def to1(weights,adjOrDis):
+    if adjOrDis=='adj':
+        total = sum(weights)
+        weights = [w / total for w in weights]
+    else:
+        for i in range(len(weights)):
+            weights[i]=math.pow(weights[i],1/2)
+        weights=[1/i for i in weights]
+        weights=[i/sum(weights) for i in weights]
+    return weights
+
+# 随机选择一个邻居节点
+def choose_neighbor(graph, node,adjOrDis):
+    if len(graph[node])==0:
+        return None
+
+    neighbors = [each[0] for each in graph[node]]
+    weights = [each[1] for each in graph[node]]
+    # 归一化权重
+    weights=to1(weights,adjOrDis)
+    # 根据权重分布随机选择邻居节点
+    return random.choices(neighbors, weights)[0]
+
+# 进行一次随机游走
+def random_walk_with_restart(graph, start_node, restart_prob,num_walks,adjOrDis):
+    adj_list = [start_node]
+    current_node = start_node
+    for _ in range(num_walks):
+        p = random.random()
+        if current_node!=start_node and p < restart_prob: # 以一定概率重启
+            adj_list.append(start_node)
+            current_node=start_node
+        else: # 否则继续游走
+            nei = choose_neighbor(graph, current_node,adjOrDis)
+            if nei is None:
+                adj_list.append(start_node)
+                current_node=start_node
+                continue
+            current_node=nei
+            adj_list.append(current_node)
+    return adj_list
+
+def sample_neighbors(graph,nodes,restart_prob,num_walks,adjOrDis):
+    neighbors=[]
+    for node in nodes:
+        neighbor=random_walk_with_restart(graph,node,restart_prob,num_walks,adjOrDis)
+        neighbors.append(neighbor)
+    return neighbors
+def sample_neighbors(graph,nodes,restart_prob,num_walks,adjOrDis):
+    neighbors=[]
+    for node in nodes:
+        neighbor=random_walk_with_restart(graph,node,restart_prob,num_walks,adjOrDis)
+        neighbors.append(neighbor)
+    return neighbors
 
 def get_node_geo_context_neighbors(index, nodes, geo_dis):
     neighbors = []
     for i in range(len(nodes)):
-        if geod.Inverse(nodes[i][1], nodes[i][0], nodes[index][1], nodes[index][0])['s12']<=geo_dis:
-            neighbors.append(i)
+        if i==index:
+            continue
+        dis = geod.Inverse(nodes[i][1], nodes[i][0], nodes[index][1], nodes[index][0])['s12']
+        if dis<=geo_dis:
+            neighbors.append((i,dis))
     return neighbors
 # 定义一个函数，获取所有节点的邻居列表
 def get_all_nodes_neighbors(nodes,geo_dis):
     result = [[] for _ in range(len(nodes))]
-    for i in range(len(nodes)):
+    for i in tqdm(range(len(nodes))):
         result[i]=get_node_geo_context_neighbors(i, nodes, geo_dis)
     return result
 
@@ -33,18 +92,10 @@ def adj_list(raw_A,raw_X,geo_dis):
     # 假设邻接矩阵是一个二维数组matrix
     n = len(raw_A)  # 邻接矩阵的行数和列数
     adj_list = [[] for _ in range(n)]
-    # 如果要将有向图转换为无向图
-    for i in range(n):  # 遍历每一行
-        for j in range(i + 1, n):  # 遍历对角线上方的每一列
-            if raw_A[i][j] != raw_A[j][i]:  # 如果不对称
-                raw_A[i][j] += raw_A[j][i]  # 将上方和下方的元素相加
-                raw_A[j][i] = raw_A[i][j]  # 更新下方的元素
-    for i in range(n):
+    for i in tqdm(range(n)):
         for j in range(n):
-            if i==j:
-                continue
             if raw_A[i][j] > 0:
-                adj_list[i].append(j)
+                adj_list[i].append((j,raw_A[i][j]))
 
     nodes = [tuple(row) for row in np.asarray(raw_X[:, [3,2]])]
     dis =get_all_nodes_neighbors(nodes,geo_dis)

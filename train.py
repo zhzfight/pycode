@@ -248,7 +248,7 @@ def train(args):
 
     args.gcn_nfeat = X.shape[1]
 
-    sage_model=GraphSage(X=X, num_node=num_pois, context_num_smaple=args.context_num_sample,adj_num_sample=args.adj_num_sample, embed_dim=args.sage_embed_dim,
+    sage_model=GraphSage(X=X, num_node=num_pois,  embed_dim=args.sage_embed_dim,restart_prob=args.restart_prob,num_walks=args.num_walks,
                          adj=adj, dis=dis, device=args.device,dropout=args.sage_dropout)
 
     # %% Model2: User embedding model, nn.embedding
@@ -310,7 +310,7 @@ def train(args):
         # POI to embedding and fuse embeddings
         input_seq_embed = []
         for idx in range(len(input_seq)):
-            poi_embedding = sage_model(input_seq[idx])
+            poi_embedding = sage_model(torch.tensor([input_seq[idx]]).to(device=args.device))
             poi_embedding=torch.squeeze(poi_embedding).to(device=args.device)
             # Time to vector
             time_embedding = time_embed_model(

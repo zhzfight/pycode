@@ -26,8 +26,16 @@ def parameter_parser():
                         help='Graph adjacent path')
     parser.add_argument('--geo-dis',
                         type=int,
-                        default=500,
+                        default=750,
                         help='geo distance less than geo_dis regarded as context poi')
+    parser.add_argument('--restart-prob',
+                        type=float,
+                        default=0.2,
+                        help='random walk with restart prob')
+    parser.add_argument('--num-walks',
+                        type=int,
+                        default=15,
+                        help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,
                         default='dataset/NYC/graph_X.csv',
