@@ -154,13 +154,13 @@ class MeanAggregator(nn.Module):
         mask = torch.zeros(len(to_neighs), len(unique_nodes_list)).to(self.device)
         column_indices = [unique_nodes[n] for n in tmp]
         row_indices = [i for i in range(len(to_neighs)) for j in range(len(to_neighs[i]))]
-
-        mask[row_indices, column_indices] += 1
+        for x,y in zip(row_indices,column_indices):
+            mask[x, y] += 1
 
         num_neigh = mask.sum(1, keepdim=True)
         mask = mask.div(num_neigh)
 
-        embed_matrix = self.id2feat(torch.LongTensor(unique_nodes_list).to(self.device))  # （unique_count, feat_dim)
+        embed_matrix = self.id2feat(torch.LongTensor(list(unique_nodes_list)).to(self.device))  # （unique_count, feat_dim)
 
         to_feats = mask.mm(embed_matrix)  # n * embed_dim
         to_feats=self.W(to_feats)
@@ -187,12 +187,10 @@ class SageLayer(nn.Module):
         self.num_walks = num_walks
         self.leakyRelu = nn.LeakyReLU(0.2)
         self.dropout = dropout
-        self.W_self = nn.Linear(embed_dim,int(embed_dim / 3),bias=False)
-        self.W_adj = nn.Linear(embed_dim,int(embed_dim / 3),bias=False)
-        self.W_dis = nn.Linear(embed_dim,int(embed_dim / 3),bias=False)
-        self.bias = nn.Parameter(torch.FloatTensor(embed_dim))
-        init.uniform_(self.bias)
-        self.WC=nn.Linear(embed_dim,embed_dim,bias=False)
+        self.W_self = nn.Linear(embed_dim,embed_dim,bias=False)
+        self.W_adj = nn.Linear(embed_dim,embed_dim ,bias=False)
+        self.W_dis = nn.Linear(embed_dim,embed_dim,bias=False)
+        self.WC=nn.Linear(3*embed_dim,embed_dim)
 
     def forward(self, nodes):
         """
@@ -207,16 +205,16 @@ class SageLayer(nn.Module):
         self_feats = F.dropout(self_feats, p=self.dropout, training=self.training)
         self_feats=self.W_self(self_feats)
 
-        adj_feats = self.adj_agg(nodes, adj_neighbors)
+        adj_feats = self.adj_agg(adj_neighbors)
         adj_feats=self.W_adj(adj_feats)
 
 
-        dis_feats = self.dis_agg(nodes, dis_neighbors)
+        dis_feats = self.dis_agg( dis_neighbors)
         dis_feats=self.W_dis(dis_feats)
 
         feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1)
-        feats=self.WC(feats+self.bias)
-
+        feats=self.WC(feats)
+        feats=self.leakyRelu(feats)
         feats = F.normalize(feats, p=2, dim=-1)
         return feats
 
@@ -227,7 +225,7 @@ class GraphSage(nn.Module):
         self.id2node = X
         self.W = nn.Linear(X.shape[1], embed_dim, bias=False)
         self.device = device
-        self.layer1 = SageLayer(id2feat=lambda nodes: self.W(nodes), adj_list=adj, dis_list=dis,
+        self.layer1 = SageLayer(id2feat=lambda nodes: self.W(self.id2node[nodes]), adj_list=adj, dis_list=dis,
                                 restart_prob=restart_prob, num_walks=num_walks, embed_dim=embed_dim, device=device,
                                 dropout=dropout)
         self.layer2 = SageLayer(id2feat=lambda nodes: self.layer1(nodes), adj_list=adj, dis_list=dis,

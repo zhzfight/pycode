@@ -21,7 +21,7 @@ def to1(weights,adjOrDis):
         weights = [w / total for w in weights]
     else:
         for i in range(len(weights)):
-            weights[i]=math.pow(weights[i],1/2)
+            weights[i]=math.pow(weights[i]+10,1/2)
         weights=[1/i for i in weights]
         weights=[i/sum(weights) for i in weights]
     return weights
