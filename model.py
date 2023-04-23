@@ -231,6 +231,7 @@ class GraphSage(nn.Module):
         super(GraphSage, self).__init__()
         self.id2node = X
         self.device = device
+        '''
         self.layer1 = SageLayer(id2feat=lambda nodes: self.id2node[nodes], adj_list=adj, dis_list=dis,
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=X.shape[1],output_dim=embed_dim, device=device,
                                 dropout=dropout)
@@ -240,9 +241,16 @@ class GraphSage(nn.Module):
         self.layer3 = SageLayer(id2feat=lambda nodes: self.layer2(nodes), adj_list=adj, dis_list=dis,
                                 restart_prob=restart_prob, num_walks=num_walks,input_dim=embed_dim,
                                 output_dim=embed_dim, device=device, dropout=dropout)
+        '''
 
+        self.layer1 = SageLayer(id2feat=lambda nodes: self.id2node[nodes], adj_list=adj, dis_list=dis,
+                                restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
+                                output_dim=embed_dim, device=device, dropout=dropout)
+        self.layer2 = SageLayer(id2feat=lambda nodes: self.layer1(nodes), adj_list=adj, dis_list=dis,
+                                restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
+                                output_dim=embed_dim, device=device, dropout=dropout)
     def forward(self, nodes):
-        return self.layer3(nodes)
+        return self.layer2(nodes)
 
 
 class TransformerModel(nn.Module):
