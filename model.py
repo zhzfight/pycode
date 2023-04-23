@@ -244,7 +244,7 @@ class GraphSage(nn.Module):
         '''
 
         self.layer1 = SageLayer(id2feat=lambda nodes: self.id2node[nodes], adj_list=adj, dis_list=dis,
-                                restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
+                                restart_prob=restart_prob, num_walks=num_walks, input_dim=X.shape[1],
                                 output_dim=embed_dim, device=device, dropout=dropout)
         self.layer2 = SageLayer(id2feat=lambda nodes: self.layer1(nodes), adj_list=adj, dis_list=dis,
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,

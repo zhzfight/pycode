@@ -64,7 +64,7 @@ def parameter_parser():
 
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=240,
+                        default=120,
                         help='sage embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
@@ -84,7 +84,7 @@ def parameter_parser():
                         help='List of hidden dims for gcn layers')
     parser.add_argument('--transformer-nhid',
                         type=int,
-                        default=1024,
+                        default=256,
                         help='Hid dim in TransformerEncoder')
     parser.add_argument('--transformer-nlayers',
                         type=int,
@@ -122,7 +122,7 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=16,
+                        default=18,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
