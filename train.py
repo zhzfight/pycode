@@ -311,7 +311,7 @@ def train(args):
         input_seq_embed = []
         for idx in range(len(input_seq)):
             poi_embedding = sage_model(torch.tensor([input_seq[idx]]).to(device=args.device))
-            poi_embedding=torch.squeeze(poi_embedding).to(device=args.device)
+            poi_embedding=torch.squeeze(poi_embedding)
             # Time to vector
             time_embedding = time_embed_model(
                 torch.tensor([input_seq_time[idx]], dtype=torch.float).to(device=args.device))

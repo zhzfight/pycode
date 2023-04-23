@@ -139,7 +139,6 @@ class MeanAggregator(nn.Module):
         super(MeanAggregator, self).__init__()
         self.id2feat = id2feat
         self.device = device
-        self.W = nn.Linear(embed_dim,embed_dim,bias=False)
 
     def forward(self,  to_neighs):
         """
@@ -161,9 +160,7 @@ class MeanAggregator(nn.Module):
         mask = mask.div(num_neigh)
 
         embed_matrix = self.id2feat(torch.LongTensor(list(unique_nodes_list)).to(self.device))  # （unique_count, feat_dim)
-
         to_feats = mask.mm(embed_matrix)  # n * embed_dim
-        to_feats=self.W(to_feats)
         return to_feats  # n * embed_dim
 
 
