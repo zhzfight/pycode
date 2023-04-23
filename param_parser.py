@@ -64,7 +64,7 @@ def parameter_parser():
 
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=128,
+                        default=129,
                         help='sage embedding dimensions')
     parser.add_argument('--adj-num-sample',
                         type=int,
