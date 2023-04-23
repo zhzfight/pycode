@@ -255,18 +255,12 @@ def train(args):
     num_users = len(user_id2idx_dict)
     user_embed_model = UserEmbeddings(num_users, args.user_embed_dim)
 
-    # %% Model3: Time Model
-    time_embed_model = Time2Vec('sin', out_dim=args.time_embed_dim)
-
     # %% Model4: Category embedding model
     cat_embed_model = CategoryEmbeddings(num_cats, args.cat_embed_dim)
 
-    # %% Model5: Embedding fusion models
-
-    embed_fuse_model2 = FuseEmbeddings(args.time_embed_dim, args.cat_embed_dim)
 
     # %% Model6: Sequence model
-    args.seq_input_embed = args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim +args.sage_embed_dim
+    args.seq_input_embed = args.user_embed_dim  + args.cat_embed_dim +args.sage_embed_dim
     seq_model = TransformerModel(num_pois,
                                  num_cats,
                                  args.seq_input_embed,
@@ -278,16 +272,14 @@ def train(args):
     # Define overall loss and optimizer
     optimizer = optim.Adam(params=list(sage_model.parameters()) +
                                   list(user_embed_model.parameters()) +
-                                  list(time_embed_model.parameters()) +
                                   list(cat_embed_model.parameters()) +
-                                  list(embed_fuse_model2.parameters()) +
                                   list(seq_model.parameters()),
                            lr=args.lr,
                            weight_decay=args.weight_decay)
 
     criterion_poi = nn.CrossEntropyLoss(ignore_index=-1)  # -1 is padding
     criterion_cat = nn.CrossEntropyLoss(ignore_index=-1)  # -1 is padding
-    criterion_time = maksed_mse_loss
+
 
     lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
         optimizer, 'min', verbose=True, factor=args.lr_scheduler_factor)
@@ -313,22 +305,14 @@ def train(args):
         input_seq_embed = []
         for idx in range(len(input_seq)):
             poi_embedding = poi_embeddings[embedding_index+idx]
-            # Time to vector
-            time_embedding = time_embed_model(
-                torch.tensor([input_seq_time[idx]], dtype=torch.float).to(device=args.device))
-            time_embedding = torch.squeeze(time_embedding).to(device=args.device)
 
             # Categroy to embedding
             cat_idx = torch.LongTensor([input_seq_cat[idx]]).to(device=args.device)
             cat_embedding = cat_embed_model(cat_idx)
             cat_embedding = torch.squeeze(cat_embedding)
 
-            # Fuse user+poi embeds
-
-            fused_embedding2 = embed_fuse_model2(time_embedding, cat_embedding)
-
             # Concat time, cat after user+poi
-            concat_embedding = torch.cat((user_embedding,poi_embedding, fused_embedding2), dim=-1)
+            concat_embedding = torch.cat((user_embedding,poi_embedding, cat_embedding), dim=-1)
 
             # Save final embed
             input_seq_embed.append(concat_embedding)
@@ -340,9 +324,7 @@ def train(args):
     # %% ====================== Train ======================
     sage_model = sage_model.to(device=args.device)
     user_embed_model = user_embed_model.to(device=args.device)
-    time_embed_model = time_embed_model.to(device=args.device)
     cat_embed_model = cat_embed_model.to(device=args.device)
-    embed_fuse_model2 = embed_fuse_model2.to(device=args.device)
     seq_model = seq_model.to(device=args.device)
 
     # %% Loop epoch
@@ -355,7 +337,7 @@ def train(args):
     train_epochs_mrr_list = []
     train_epochs_loss_list = []
     train_epochs_poi_loss_list = []
-    train_epochs_time_loss_list = []
+
     train_epochs_cat_loss_list = []
     val_epochs_top1_acc_list = []
     val_epochs_top5_acc_list = []
@@ -365,7 +347,7 @@ def train(args):
     val_epochs_mrr_list = []
     val_epochs_loss_list = []
     val_epochs_poi_loss_list = []
-    val_epochs_time_loss_list = []
+
     val_epochs_cat_loss_list = []
     # For saving ckpt
     max_val_score = -np.inf
@@ -373,9 +355,7 @@ def train(args):
     for epoch in range(args.epochs):
         logging.info(f"{'*' * 50}Epoch:{epoch:03d}{'*' * 50}\n")
         user_embed_model.train()
-        time_embed_model.train()
         cat_embed_model.train()
-        embed_fuse_model2.train()
         seq_model.train()
         sage_model.train()
 
@@ -387,7 +367,6 @@ def train(args):
         train_batches_mrr_list = []
         train_batches_loss_list = []
         train_batches_poi_loss_list = []
-        train_batches_time_loss_list = []
         train_batches_cat_loss_list = []
         src_mask = seq_model.generate_square_subsequent_mask(args.batch).to(args.device)
         # Loop batch
@@ -400,7 +379,7 @@ def train(args):
             batch_seq_lens = []
             batch_seq_embeds = []
             batch_seq_labels_poi = []
-            batch_seq_labels_time = []
+
             batch_seq_labels_cat = []
 
             pois=[each[0] for sample in batch for each in sample[1] ]
@@ -412,17 +391,12 @@ def train(args):
                 traj_id = sample[0]
                 input_seq = [each[0] for each in sample[1]]
                 label_seq = [each[0] for each in sample[2]]
-
-
-                input_seq_time = [each[1] for each in sample[1]]
-                label_seq_time = [each[1] for each in sample[2]]
                 label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
                 input_seq_embed = torch.stack(input_traj_to_embeddings(sample,poi_embeddings,embedding_index))
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(input_seq))
                 batch_input_seqs.append(input_seq)
                 batch_seq_labels_poi.append(torch.LongTensor(label_seq))
-                batch_seq_labels_time.append(torch.FloatTensor(label_seq_time))
                 batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
                 embedding_index+=len(input_seq)
 
@@ -431,7 +405,6 @@ def train(args):
             # Pad seqs for batch training
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_seq_labels_poi, batch_first=True, padding_value=-1)
-            label_padded_time = pad_sequence(batch_seq_labels_time, batch_first=True, padding_value=-1)
             label_padded_cat = pad_sequence(batch_seq_labels_cat, batch_first=True, padding_value=-1)
 
 
@@ -439,17 +412,15 @@ def train(args):
             # Feedforward
             x = batch_padded.to(device=args.device, dtype=torch.float)
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
-            y_time = label_padded_time.to(device=args.device, dtype=torch.float)
             y_cat = label_padded_cat.to(device=args.device, dtype=torch.long)
 
-            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x, src_mask)
+            y_pred_poi,  y_pred_cat = seq_model(x, src_mask)
 
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
-            loss_time = criterion_time(torch.squeeze(y_pred_time), y_time)
             loss_cat = criterion_cat(y_pred_cat.transpose(1, 2), y_cat)
 
             # Final loss
-            loss = loss_poi + loss_time * args.time_loss_weight + loss_cat
+            loss = loss_poi + loss_cat
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -463,7 +434,6 @@ def train(args):
             mrr = 0
             batch_label_pois = y_poi.detach().cpu().numpy()
             batch_pred_pois = y_pred_poi.detach().cpu().numpy()
-            batch_pred_times = y_pred_time.detach().cpu().numpy()
             batch_pred_cats = y_pred_cat.detach().cpu().numpy()
             for label_pois, pred_pois, seq_len in zip(batch_label_pois, batch_pred_pois, batch_seq_lens):
                 label_pois = label_pois[:seq_len]  # shape: (seq_len, )
@@ -482,11 +452,10 @@ def train(args):
             train_batches_mrr_list.append(mrr / len(batch_label_pois))
             train_batches_loss_list.append(loss.detach().cpu().numpy())
             train_batches_poi_loss_list.append(loss_poi.detach().cpu().numpy())
-            train_batches_time_loss_list.append(loss_time.detach().cpu().numpy())
             train_batches_cat_loss_list.append(loss_cat.detach().cpu().numpy())
 
             # Report training progress
-            if (b_idx % (5)) == 0:
+            if (b_idx % (1)) == 0:
                 sample_idx = 0
                 batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                 logging.info(f'Epoch:{epoch}, batch:{b_idx}, '
@@ -494,7 +463,7 @@ def train(args):
                              f'train_batch_top1_acc:{top1_acc / len(batch_label_pois):.2f}, '
                              f'train_move_loss:{np.mean(train_batches_loss_list):.2f}\n'
                              f'train_move_poi_loss:{np.mean(train_batches_poi_loss_list):.2f}\n'
-                             f'train_move_time_loss:{np.mean(train_batches_time_loss_list):.2f}\n'
+                             f'train_move_cat_loss:{np.mean(train_batches_cat_loss_list):.2f}\n'
                              f'train_move_top1_acc:{np.mean(train_batches_top1_acc_list):.4f}\n'
                              f'train_move_top5_acc:{np.mean(train_batches_top5_acc_list):.4f}\n'
                              f'train_move_top10_acc:{np.mean(train_batches_top10_acc_list):.4f}\n'
@@ -507,16 +476,12 @@ def train(args):
                              f'pred_seq_poi_wo_attn:{list(np.argmax(batch_pred_pois_wo_attn, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
                              f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
                              f'label_seq_cat:{[poi_idx2cat_idx_dict[each[0]] for each in batch[sample_idx][2]]}\n'
-                             f'pred_seq_cat:{list(np.argmax(batch_pred_cats, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
-                             f'label_seq_time:{list(batch_seq_labels_time[sample_idx].numpy()[:batch_seq_lens[sample_idx]])}\n'
-                             f'pred_seq_time:{list(np.squeeze(batch_pred_times)[sample_idx][:batch_seq_lens[sample_idx]])} \n' +
+                             f'pred_seq_cat:{list(np.argmax(batch_pred_cats, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'+
                              '=' * 100)
 
         # train end --------------------------------------------------------------------------------------------------------
         user_embed_model.eval()
-        time_embed_model.eval()
         cat_embed_model.eval()
-        embed_fuse_model2.eval()
         seq_model.eval()
         sage_model.eval()
         val_batches_top1_acc_list = []
@@ -527,7 +492,6 @@ def train(args):
         val_batches_mrr_list = []
         val_batches_loss_list = []
         val_batches_poi_loss_list = []
-        val_batches_time_loss_list = []
         val_batches_cat_loss_list = []
         src_mask = seq_model.generate_square_subsequent_mask(args.batch).to(args.device)
         for vb_idx, batch in enumerate(val_loader):
@@ -539,7 +503,6 @@ def train(args):
             batch_seq_lens = []
             batch_seq_embeds = []
             batch_seq_labels_poi = []
-            batch_seq_labels_time = []
             batch_seq_labels_cat = []
 
 
@@ -549,39 +512,38 @@ def train(args):
                 input_seq = [each[0] for each in sample[1]]
                 label_seq = [each[0] for each in sample[2]]
 
-                input_seq_time = [each[1] for each in sample[1]]
-                label_seq_time = [each[1] for each in sample[2]]
+
                 label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
                 input_seq_embed = torch.stack(input_traj_to_embeddings(sample))
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(input_seq))
                 batch_input_seqs.append(input_seq)
                 batch_seq_labels_poi.append(torch.LongTensor(label_seq))
-                batch_seq_labels_time.append(torch.FloatTensor(label_seq_time))
+
                 batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
 
 
             # Pad seqs for batch training
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_seq_labels_poi, batch_first=True, padding_value=-1)
-            label_padded_time = pad_sequence(batch_seq_labels_time, batch_first=True, padding_value=-1)
+
             label_padded_cat = pad_sequence(batch_seq_labels_cat, batch_first=True, padding_value=-1)
 
             # Feedforward
             x = batch_padded.to(device=args.device, dtype=torch.float)
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
-            y_time = label_padded_time.to(device=args.device, dtype=torch.float)
+
             y_cat = label_padded_cat.to(device=args.device, dtype=torch.long)
 
 
-            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x, src_mask)
+            y_pred_poi,  y_pred_cat = seq_model(x, src_mask)
 
             # Calculate loss
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
-            loss_time = criterion_time(torch.squeeze(y_pred_time), y_time)
+
             loss_cat = criterion_cat(y_pred_cat.transpose(1, 2), y_cat)
 
-            loss = loss_poi + loss_time * args.time_loss_weight + loss_cat
+            loss = loss_poi + loss_cat
             # Performance measurement
             top1_acc = 0
             top5_acc = 0
@@ -590,7 +552,7 @@ def train(args):
             mAP20 = 0
             mrr = 0
             batch_label_pois = y_poi.detach().cpu().numpy()
-            batch_pred_times = y_pred_time.detach().cpu().numpy()
+
             batch_pred_cats = y_pred_cat.detach().cpu().numpy()
 
             for label_pois, pred_pois, seq_len in zip(batch_label_pois, batch_pred_pois, batch_seq_lens):
@@ -610,10 +572,10 @@ def train(args):
             val_batches_mrr_list.append(mrr / len(batch_label_pois))
             val_batches_loss_list.append(loss.detach().cpu().numpy())
             val_batches_poi_loss_list.append(loss_poi.detach().cpu().numpy())
-            val_batches_time_loss_list.append(loss_time.detach().cpu().numpy())
+
             val_batches_cat_loss_list.append(loss_cat.detach().cpu().numpy())
             # Report validation progress
-            if (vb_idx % (5)) == 0:
+            if (vb_idx % (1)) == 0:
                 sample_idx = 0
                 batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                 logging.info(f'Epoch:{epoch}, batch:{vb_idx}, '
@@ -621,7 +583,7 @@ def train(args):
                              f'val_batch_top1_acc:{top1_acc / len(batch_label_pois):.2f}, '
                              f'val_move_loss:{np.mean(val_batches_loss_list):.2f} \n'
                              f'val_move_poi_loss:{np.mean(val_batches_poi_loss_list):.2f} \n'
-                             f'val_move_time_loss:{np.mean(val_batches_time_loss_list):.2f} \n'
+                             f'val_move_cat_loss:{np.mean(val_batches_cat_loss_list):.2f} \n'
                              f'val_move_top1_acc:{np.mean(val_batches_top1_acc_list):.4f} \n'
                              f'val_move_top5_acc:{np.mean(val_batches_top5_acc_list):.4f} \n'
                              f'val_move_top10_acc:{np.mean(val_batches_top10_acc_list):.4f} \n'
@@ -635,8 +597,7 @@ def train(args):
                              f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
                              f'label_seq_cat:{[poi_idx2cat_idx_dict[each[0]] for each in batch[sample_idx][2]]}\n'
                              f'pred_seq_cat:{list(np.argmax(batch_pred_cats, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
-                             f'label_seq_time:{list(batch_seq_labels_time[sample_idx].numpy()[:batch_seq_lens[sample_idx]])}\n'
-                             f'pred_seq_time:{list(np.squeeze(batch_pred_times)[sample_idx][:batch_seq_lens[sample_idx]])} \n' +
+
                              '=' * 100)
         # valid end --------------------------------------------------------------------------------------------------------
 
@@ -649,7 +610,7 @@ def train(args):
         epoch_train_mrr = np.mean(train_batches_mrr_list)
         epoch_train_loss = np.mean(train_batches_loss_list)
         epoch_train_poi_loss = np.mean(train_batches_poi_loss_list)
-        epoch_train_time_loss = np.mean(train_batches_time_loss_list)
+
         epoch_train_cat_loss = np.mean(train_batches_cat_loss_list)
         epoch_val_top1_acc = np.mean(val_batches_top1_acc_list)
         epoch_val_top5_acc = np.mean(val_batches_top5_acc_list)
@@ -659,13 +620,13 @@ def train(args):
         epoch_val_mrr = np.mean(val_batches_mrr_list)
         epoch_val_loss = np.mean(val_batches_loss_list)
         epoch_val_poi_loss = np.mean(val_batches_poi_loss_list)
-        epoch_val_time_loss = np.mean(val_batches_time_loss_list)
+
         epoch_val_cat_loss = np.mean(val_batches_cat_loss_list)
 
         # Save metrics to list
         train_epochs_loss_list.append(epoch_train_loss)
         train_epochs_poi_loss_list.append(epoch_train_poi_loss)
-        train_epochs_time_loss_list.append(epoch_train_time_loss)
+
         train_epochs_cat_loss_list.append(epoch_train_cat_loss)
         train_epochs_top1_acc_list.append(epoch_train_top1_acc)
         train_epochs_top5_acc_list.append(epoch_train_top5_acc)
@@ -675,7 +636,7 @@ def train(args):
         train_epochs_mrr_list.append(epoch_train_mrr)
         val_epochs_loss_list.append(epoch_val_loss)
         val_epochs_poi_loss_list.append(epoch_val_poi_loss)
-        val_epochs_time_loss_list.append(epoch_val_time_loss)
+
         val_epochs_cat_loss_list.append(epoch_val_cat_loss)
         val_epochs_top1_acc_list.append(epoch_val_top1_acc)
         val_epochs_top5_acc_list.append(epoch_val_top5_acc)
@@ -695,7 +656,7 @@ def train(args):
         logging.info(f"Epoch {epoch}/{args.epochs}\n"
                      f"train_loss:{epoch_train_loss:.4f}, "
                      f"train_poi_loss:{epoch_train_poi_loss:.4f}, "
-                     f"train_time_loss:{epoch_train_time_loss:.4f}, "
+
                      f"train_cat_loss:{epoch_train_cat_loss:.4f}, "
                      f"train_top1_acc:{epoch_train_top1_acc:.4f}, "
                      f"train_top5_acc:{epoch_train_top5_acc:.4f}, "
@@ -705,7 +666,7 @@ def train(args):
                      f"train_mrr:{epoch_train_mrr:.4f}\n"
                      f"val_loss: {epoch_val_loss:.4f}, "
                      f"val_poi_loss: {epoch_val_poi_loss:.4f}, "
-                     f"val_time_loss: {epoch_val_time_loss:.4f}, "
+
                      f"val_cat_loss: {epoch_val_cat_loss:.4f}, "
                      f"val_top1_acc:{epoch_val_top1_acc:.4f}, "
                      f"val_top5_acc:{epoch_val_top5_acc:.4f}, "
@@ -718,8 +679,7 @@ def train(args):
         with open(os.path.join(args.save_dir, 'metrics-train.txt'), "w") as f:
             print(f'train_epochs_loss_list={[float(f"{each:.4f}") for each in train_epochs_loss_list]}', file=f)
             print(f'train_epochs_poi_loss_list={[float(f"{each:.4f}") for each in train_epochs_poi_loss_list]}', file=f)
-            print(f'train_epochs_time_loss_list={[float(f"{each:.4f}") for each in train_epochs_time_loss_list]}',
-                  file=f)
+
             print(f'train_epochs_cat_loss_list={[float(f"{each:.4f}") for each in train_epochs_cat_loss_list]}', file=f)
             print(f'train_epochs_top1_acc_list={[float(f"{each:.4f}") for each in train_epochs_top1_acc_list]}', file=f)
             print(f'train_epochs_top5_acc_list={[float(f"{each:.4f}") for each in train_epochs_top5_acc_list]}', file=f)
@@ -732,7 +692,7 @@ def train(args):
         with open(os.path.join(args.save_dir, 'metrics-val.txt'), "w") as f:
             print(f'val_epochs_loss_list={[float(f"{each:.4f}") for each in val_epochs_loss_list]}', file=f)
             print(f'val_epochs_poi_loss_list={[float(f"{each:.4f}") for each in val_epochs_poi_loss_list]}', file=f)
-            print(f'val_epochs_time_loss_list={[float(f"{each:.4f}") for each in val_epochs_time_loss_list]}', file=f)
+
             print(f'val_epochs_cat_loss_list={[float(f"{each:.4f}") for each in val_epochs_cat_loss_list]}', file=f)
             print(f'val_epochs_top1_acc_list={[float(f"{each:.4f}") for each in val_epochs_top1_acc_list]}', file=f)
             print(f'val_epochs_top5_acc_list={[float(f"{each:.4f}") for each in val_epochs_top5_acc_list]}', file=f)

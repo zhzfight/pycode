@@ -131,7 +131,7 @@ class MeanAggregator(nn.Module):
     Aggregates a node's embeddings using mean of neighbors' embeddings and transform
     """
 
-    def __init__(self, id2feat, device, embed_dim):
+    def __init__(self, id2feat, device):
         """
         features -- function mapping LongTensor of node ids to FloatTensor of feature values.
         cuda -- whether to use GPU
@@ -172,11 +172,11 @@ class SageLayer(nn.Module):
     gcn --- whether to perform concatenation GraphSAGE-style, or add self-loops GCN-style
     """
 
-    def __init__(self, id2feat, adj_list, dis_list, restart_prob, num_walks, embed_dim, device, dropout):
+    def __init__(self, id2feat, adj_list, dis_list, restart_prob, num_walks, input_dim,output_dim, device, dropout):
         super(SageLayer, self).__init__()
         self.id2feat = id2feat
-        self.dis_agg = MeanAggregator(self.id2feat, device, embed_dim)
-        self.adj_agg = MeanAggregator(self.id2feat, device, embed_dim)
+        self.dis_agg = MeanAggregator(self.id2feat, device)
+        self.adj_agg = MeanAggregator(self.id2feat, device)
         self.device = device
         self.adj_list = adj_list
         self.dis_list = dis_list
@@ -184,11 +184,18 @@ class SageLayer(nn.Module):
         self.num_walks = num_walks
         self.leakyRelu = nn.LeakyReLU(0.2)
         self.dropout = dropout
-        self.W_self = nn.Linear(embed_dim,int(embed_dim/3),bias=False)
-        self.W_adj = nn.Linear(embed_dim,int(embed_dim/3) ,bias=False)
-        self.W_dis = nn.Linear(embed_dim,int(embed_dim/3),bias=False)
-        self.WC=nn.Linear(embed_dim,embed_dim)
+        self.W_self = nn.Linear(input_dim, int(output_dim / 3), bias=False)
+        self.W_adj = nn.Linear(input_dim, int(output_dim / 3), bias=False)
+        self.W_dis = nn.Linear(input_dim, int(output_dim / 3), bias=False)
+        #self.WC=nn.Linear(embed_dim,embed_dim)
+        self.bias=nn.Parameter(torch.FloatTensor(output_dim))
 
+    def init_weights(self):
+        initrange = 0.1
+        self.W_self.weight.data.uniform_(-initrange, initrange)
+        self.W_adj.weight.data.uniform_(-initrange, initrange)
+        self.W_dis.weight.data.uniform_(-initrange, initrange)
+        self.bias.data.zero_()
     def forward(self, nodes):
         """
         Generates embeddings for a batch of nodes.
@@ -205,8 +212,8 @@ class SageLayer(nn.Module):
         adj_feats = self.W_adj(adj_feats)
         self_feats = self.W_self(self_feats)
         dis_feats=self.W_dis(dis_feats)
-        feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1)
-        feats=self.WC(feats)
+        feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1)+self.bias
+        #feats=self.WC(feats)
         feats=self.leakyRelu(feats)
         feats = F.normalize(feats, p=2, dim=-1)
 
@@ -223,17 +230,19 @@ class GraphSage(nn.Module):
     def __init__(self, X, num_node, embed_dim, adj, dis, device, restart_prob, num_walks, dropout):
         super(GraphSage, self).__init__()
         self.id2node = X
-        self.W = nn.Linear(X.shape[1], embed_dim, bias=False)
         self.device = device
-        self.layer1 = SageLayer(id2feat=lambda nodes: self.W(self.id2node[nodes]), adj_list=adj, dis_list=dis,
-                                restart_prob=restart_prob, num_walks=num_walks, embed_dim=embed_dim, device=device,
+        self.layer1 = SageLayer(id2feat=lambda nodes: self.id2node[nodes], adj_list=adj, dis_list=dis,
+                                restart_prob=restart_prob, num_walks=num_walks, input_dim=X.shape[1],output_dim=embed_dim, device=device,
                                 dropout=dropout)
         self.layer2 = SageLayer(id2feat=lambda nodes: self.layer1(nodes), adj_list=adj, dis_list=dis,
-                                restart_prob=restart_prob, num_walks=num_walks,
-                                embed_dim=embed_dim, device=device, dropout=dropout)
+                                restart_prob=restart_prob, num_walks=num_walks,input_dim=embed_dim,
+                                output_dim=embed_dim, device=device, dropout=dropout)
+        self.layer3 = SageLayer(id2feat=lambda nodes: self.layer2(nodes), adj_list=adj, dis_list=dis,
+                                restart_prob=restart_prob, num_walks=num_walks,input_dim=embed_dim,
+                                output_dim=embed_dim, device=device, dropout=dropout)
 
     def forward(self, nodes):
-        return self.layer2(nodes)
+        return self.layer3(nodes)
 
 
 class TransformerModel(nn.Module):
@@ -246,7 +255,6 @@ class TransformerModel(nn.Module):
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
         self.embed_size = embed_size
         self.decoder_poi = nn.Linear(embed_size, num_poi)
-        self.decoder_time = nn.Linear(embed_size, 1)
         self.decoder_cat = nn.Linear(embed_size, num_cat)
         self.init_weights()
 
@@ -261,11 +269,10 @@ class TransformerModel(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, src_mask):
-        src = src * math.sqrt(self.embed_size)
+        #src = src * math.sqrt(self.embed_size)
         src = self.pos_encoder(src)
         x = self.transformer_encoder(src, src_mask)
         out_poi = self.decoder_poi(x)
-        out_time = self.decoder_time(x)
         out_cat = self.decoder_cat(x)
 
-        return out_poi, out_time, out_cat
+        return out_poi,  out_cat
