@@ -194,26 +194,29 @@ class SageLayer(nn.Module):
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
-        adj_neighbors = sample_neighbors(self.adj_list, nodes.tolist(), self.restart_prob, self.num_walks, 'adj')
-        dis_neighbors = sample_neighbors(self.dis_list, nodes.tolist(), self.restart_prob, self.num_walks, 'dis')
-
-
-        self_feats = self.id2feat(nodes)
+        unique_nodes_list=list(set([int(node) for node in nodes]))
+        unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
+        adj_neighbors = sample_neighbors(self.adj_list, unique_nodes_list, self.restart_prob, self.num_walks, 'adj')
+        dis_neighbors = sample_neighbors(self.dis_list, unique_nodes_list, self.restart_prob, self.num_walks, 'dis')
+        self_feats = self.id2feat(torch.tensor(unique_nodes_list).to(self.device))
         self_feats = F.dropout(self_feats, p=self.dropout, training=self.training)
-        self_feats=self.W_self(self_feats)
-
         adj_feats = self.adj_agg(adj_neighbors)
-        adj_feats=self.W_adj(adj_feats)
-
-
         dis_feats = self.dis_agg( dis_neighbors)
+        adj_feats = self.W_adj(adj_feats)
+        self_feats = self.W_self(self_feats)
         dis_feats=self.W_dis(dis_feats)
-
         feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1)
         feats=self.WC(feats)
         feats=self.leakyRelu(feats)
-        #feats = F.normalize(feats, p=2, dim=-1)
-        return feats
+        feats = F.normalize(feats, p=2, dim=-1)
+
+        res=[]
+        for node in nodes:
+            res.append(feats[unique_nodes[int(node)]])
+        res=torch.stack(res,dim=0)
+
+
+        return res
 
 
 class GraphSage(nn.Module):

@@ -293,7 +293,7 @@ def train(args):
         optimizer, 'min', verbose=True, factor=args.lr_scheduler_factor)
 
     # %% Tool functions for training
-    def input_traj_to_embeddings(sample):
+    def input_traj_to_embeddings(sample,poi_embeddings,embedding_index):
         # Parse sample
         traj_id = sample[0]
         input_seq = [each[0] for each in sample[1]]
@@ -308,10 +308,11 @@ def train(args):
         user_embedding = torch.squeeze(user_embedding)
 
         # POI to embedding and fuse embeddings
+
+
         input_seq_embed = []
         for idx in range(len(input_seq)):
-            poi_embedding = sage_model(torch.tensor([input_seq[idx]]).to(device=args.device))
-            poi_embedding=torch.squeeze(poi_embedding)
+            poi_embedding = poi_embeddings[embedding_index+idx]
             # Time to vector
             time_embedding = time_embed_model(
                 torch.tensor([input_seq_time[idx]], dtype=torch.float).to(device=args.device))
@@ -402,9 +403,10 @@ def train(args):
             batch_seq_labels_time = []
             batch_seq_labels_cat = []
 
-
-
+            pois=[each[0] for sample in batch for each in sample[1] ]
+            poi_embeddings=sage_model(torch.tensor(pois).to(args.device))
             # Convert input seq to embeddings
+            embedding_index=0
             for sample in batch:
                 # sample[0]: traj_id, sample[1]: input_seq, sample[2]: label_seq
                 traj_id = sample[0]
@@ -415,13 +417,14 @@ def train(args):
                 input_seq_time = [each[1] for each in sample[1]]
                 label_seq_time = [each[1] for each in sample[2]]
                 label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
-                input_seq_embed = torch.stack(input_traj_to_embeddings(sample))
+                input_seq_embed = torch.stack(input_traj_to_embeddings(sample,poi_embeddings,embedding_index))
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(input_seq))
                 batch_input_seqs.append(input_seq)
                 batch_seq_labels_poi.append(torch.LongTensor(label_seq))
                 batch_seq_labels_time.append(torch.FloatTensor(label_seq_time))
                 batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
+                embedding_index+=len(input_seq)
 
 
 
@@ -448,7 +451,7 @@ def train(args):
             # Final loss
             loss = loss_poi + loss_time * args.time_loss_weight + loss_cat
             optimizer.zero_grad()
-            loss.backward(retain_graph=True)
+            loss.backward()
             optimizer.step()
 
             # Performance measurement
@@ -483,7 +486,7 @@ def train(args):
             train_batches_cat_loss_list.append(loss_cat.detach().cpu().numpy())
 
             # Report training progress
-            if (b_idx % (20)) == 0:
+            if (b_idx % (5)) == 0:
                 sample_idx = 0
                 batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                 logging.info(f'Epoch:{epoch}, batch:{b_idx}, '
