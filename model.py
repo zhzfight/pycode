@@ -184,10 +184,10 @@ class SageLayer(nn.Module):
         self.num_walks = num_walks
         self.leakyRelu = nn.LeakyReLU(0.2)
         self.dropout = dropout
-        self.W_self = nn.Linear(embed_dim,embed_dim,bias=False)
-        self.W_adj = nn.Linear(embed_dim,embed_dim ,bias=False)
-        self.W_dis = nn.Linear(embed_dim,embed_dim,bias=False)
-        self.WC=nn.Linear(3*embed_dim,embed_dim)
+        self.W_self = nn.Linear(embed_dim,int(embed_dim/3),bias=False)
+        self.W_adj = nn.Linear(embed_dim,int(embed_dim/3) ,bias=False)
+        self.W_dis = nn.Linear(embed_dim,int(embed_dim/3),bias=False)
+        self.WC=nn.Linear(embed_dim,embed_dim)
 
     def forward(self, nodes):
         """
