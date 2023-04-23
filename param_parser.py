@@ -30,11 +30,11 @@ def parameter_parser():
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,
-                        default=0.1,
+                        default=0.3,
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=10,
+                        default=99,
                         help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,
@@ -130,7 +130,7 @@ def parameter_parser():
                         help='Number of epochs to train.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.01,
+                        default=0.001,
                         help='Initial learning rate.')
     parser.add_argument('--lr-scheduler-factor',
                         type=float,
