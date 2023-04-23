@@ -212,7 +212,7 @@ class SageLayer(nn.Module):
         feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1)
         feats=self.WC(feats)
         feats=self.leakyRelu(feats)
-        feats = F.normalize(feats, p=2, dim=-1)
+        #feats = F.normalize(feats, p=2, dim=-1)
         return feats
 
 
