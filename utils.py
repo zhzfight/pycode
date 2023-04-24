@@ -12,11 +12,12 @@ import torch.nn.functional as F
 import random
 from geographiclib.geodesic import Geodesic
 from tqdm import tqdm
+import multiprocessing
 from multiprocessing import Pool
 
 geod = Geodesic.WGS84
 
-
+print('cpus: ',multiprocessing.cpu_count())
 def to1(weights,adjOrDis):
     if adjOrDis=='adj':
         total = sum(weights)

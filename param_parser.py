@@ -130,11 +130,11 @@ def parameter_parser():
                         help='Number of epochs to train.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.01,
+                        default=0.001,
                         help='Initial learning rate.')
     parser.add_argument('--lr-scheduler-factor',
                         type=float,
-                        default=0.1,
+                        default=0.01,
                         help='Learning rate scheduler factor')
     parser.add_argument('--weight_decay',
                         type=float,
