@@ -212,6 +212,7 @@ class SageLayer(nn.Module):
         unique_nodes_list = list(set([int(node) for node in nodes]))
         unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
         if self.id==1:
+            print('nodes num',len(unique_nodes_list))
             tasks = split_list(unique_nodes_list, self.workers)
             pool=mp.Pool(self.workers)
             feats=pool.map(self.help,tasks)
