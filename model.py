@@ -11,6 +11,7 @@ import random
 import numpy as np
 from utils import sample_neighbors, split_list
 import multiprocess as mp
+mp.set_start_method('spawn')
 
 seed = 0
 random.seed(seed)
