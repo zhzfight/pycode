@@ -214,9 +214,10 @@ class SageLayer(nn.Module):
         if self.id==1:
             tasks = split_list(unique_nodes_list, self.workers)
             pool=mp.Pool(self.workers)
-
             feats=pool.map(self.help,tasks)
-            feats=torch.stack(feats,dim=0)
+            for feat in feats:
+                print(feat.shape)
+            feats=torch.cat(feats,dim=0)
         else:
             feats=self.help(unique_nodes_list)
 

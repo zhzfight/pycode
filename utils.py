@@ -68,7 +68,7 @@ def sample_neighbors(graph,nodes,restart_prob,num_walks,adjOrDis):
     res=[]
     for node in nodes:
         neighbors=random_walk_with_restart(graph,node,restart_prob,num_walks,adjOrDis)
-        res.append(res)
+        res.append(neighbors)
     return res
 
 def get_node_geo_context_neighbors(index, nodes, geo_dis):
