@@ -9,7 +9,7 @@ from torch.autograd import Variable
 from torch.nn.utils.rnn import pad_sequence
 import random
 import numpy as np
-from utils import sample_neighbors, split_list
+from utils import sample_neighbors, split_list,callback
 import multiprocess as mp
 
 
@@ -215,11 +215,13 @@ class SageLayer(nn.Module):
             print('layer1 nodes num',len(unique_nodes_list))
             tasks = split_list(unique_nodes_list, self.workers)
             pool=mp.Pool(self.workers)
-            feats=pool.map(self.help,tasks)
-            for result in feats:
-                if isinstance(result, Exception):
-                    # 如果结果是一个异常对象，那么打印异常信息
-                    print(f"Error: {result}")
+            feats=[]
+            for task in tasks:
+                result = pool.apply_async(self.help, args=(task,), callback=callback)
+                feats.append(result)
+            pool.close()
+            pool.join()
+
             feats=torch.cat(feats,dim=0)
         else:
             print('layer2 nodes num',len(unique_nodes_list))

@@ -15,6 +15,10 @@ from tqdm import tqdm
 
 
 geod = Geodesic.WGS84
+def callback(result):
+    if isinstance(result, Exception):
+        # 如果结果是一个异常对象，那么打印异常信息
+        print(f"Error: {result}")
 
 def split_list(a_list, x):
     # 计算每份的长度和余数
