@@ -11,7 +11,7 @@ import random
 import numpy as np
 from utils import sample_neighbors, split_list
 import multiprocess as mp
-mp.set_start_method('spawn')
+
 
 seed = 0
 random.seed(seed)
@@ -214,6 +214,7 @@ class SageLayer(nn.Module):
         if self.id==1:
             tasks = split_list(unique_nodes_list, self.workers)
             pool=mp.Pool(self.workers)
+
             feats=pool.map(self.help,tasks)
             feats=torch.stack(feats,dim=0)
         else:
