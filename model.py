@@ -215,13 +215,13 @@ class SageLayer(nn.Module):
             print('layer1 nodes num',len(unique_nodes_list))
             tasks = split_list(unique_nodes_list, self.workers)
             pool=mp.Pool(self.workers)
-            feats=[]
+            results=[]
             for task in tasks:
                 result = pool.apply_async(self.help, args=(task,), callback=callback)
-                feats.append(result)
+                results.append(result)
             pool.close()
             pool.join()
-
+            feats=[result.get() for result in results]
             feats=torch.cat(feats,dim=0)
         else:
             print('layer2 nodes num',len(unique_nodes_list))
