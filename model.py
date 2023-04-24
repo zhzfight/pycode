@@ -225,6 +225,8 @@ class SageLayer(nn.Module):
         res = torch.stack(res, dim=0)
         return res
     def help(self, unique_nodes_list):
+        if len(unique_nodes_list)==0:
+            print('damn! an error happen!')
         adj_neighbors = sample_neighbors(self.adj_list, unique_nodes_list, self.restart_prob, self.num_walks, 'adj')
         dis_neighbors = sample_neighbors(self.dis_list, unique_nodes_list, self.restart_prob, self.num_walks, 'dis')
         self_feats = self.id2feat(torch.tensor(unique_nodes_list).to(self.device))
