@@ -12,12 +12,15 @@ import torch.nn.functional as F
 import random
 from geographiclib.geodesic import Geodesic
 from tqdm import tqdm
-import multiprocessing
-from multiprocessing import Pool
+
 
 geod = Geodesic.WGS84
 
-print('cpus: ',multiprocessing.cpu_count())
+def split_list(a_list, x):
+    # 计算每份的长度和余数
+    k, m = divmod(len(a_list), x)
+    # 使用列表生成器返回x份列表
+    return [a_list[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(x)]
 def to1(weights,adjOrDis):
     if adjOrDis=='adj':
         total = sum(weights)
@@ -60,10 +63,12 @@ def random_walk_with_restart(graph, start_node, restart_prob,num_walks,adjOrDis)
             adj_list.append(current_node)
     return adj_list
 
-pool=Pool()
+
 def sample_neighbors(graph,nodes,restart_prob,num_walks,adjOrDis):
-    parameters=[(graph,node,restart_prob,num_walks,adjOrDis) for node in nodes]
-    res=pool.starmap(random_walk_with_restart,parameters)
+    res=[]
+    for node in nodes:
+        neighbors=random_walk_with_restart(graph,node,restart_prob,num_walks,adjOrDis)
+        res.append(res)
     return res
 
 def get_node_geo_context_neighbors(index, nodes, geo_dis):

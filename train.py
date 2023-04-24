@@ -249,7 +249,7 @@ def train(args):
     args.gcn_nfeat = X.shape[1]
 
     sage_model=GraphSage(X=X, num_node=num_pois,  embed_dim=args.sage_embed_dim,restart_prob=args.restart_prob,num_walks=args.num_walks,
-                         adj=adj, dis=dis, device=args.device,dropout=args.sage_dropout)
+                         adj=adj, dis=dis, device=args.device,dropout=args.sage_dropout,workers=args.cpus)
 
     # %% Model2: User embedding model, nn.embedding
     num_users = len(user_id2idx_dict)
@@ -399,6 +399,7 @@ def train(args):
                 batch_seq_labels_poi.append(torch.LongTensor(label_seq))
                 batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
                 embedding_index+=len(input_seq)
+
 
 
 

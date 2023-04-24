@@ -15,6 +15,10 @@ def parameter_parser():
                         type=int,
                         default=33,
                         help='Random seed')
+    parser.add_argument('--cpus',
+                        type=int,
+                        default=4,
+                        help='num of cpu')
     parser.add_argument('--device',
                         type=str,
                         default=device,
