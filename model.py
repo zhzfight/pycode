@@ -1,4 +1,5 @@
 import math
+import time
 
 import torch
 import torch.nn as nn
@@ -209,35 +210,25 @@ class SageLayer(nn.Module):
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
+        if self.id==2:
+            start_time=time.time()
+
         unique_nodes_list = list(set([int(node) for node in nodes]))
         unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
-        if self.id==1:
-            print('layer1 nodes num',len(unique_nodes_list))
-            tasks = split_list(unique_nodes_list, self.workers)
-            pool=mp.Pool(self.workers)
-            results=[]
-            for task in tasks:
-                result = pool.apply_async(self.help, args=(task,), callback=callback)
-                results.append(result)
-            pool.close()
-            pool.join()
-            feats=[result.get() for result in results]
-            feats=torch.cat(feats,dim=0)
-        else:
-            print('layer2 nodes num',len(unique_nodes_list))
-            feats=self.help(unique_nodes_list)
 
-        assert feats.shape[0]==len(unique_nodes_list)
-        res = []
-        for node in nodes:
-            res.append(feats[unique_nodes[int(node)]])
-        res = torch.stack(res, dim=0)
-        return res
-    def help(self, unique_nodes_list):
-        if len(unique_nodes_list)==0:
-            print('damn! an error happen!')
-        adj_neighbors = sample_neighbors(self.adj_list, unique_nodes_list, self.restart_prob, self.num_walks, 'adj')
-        dis_neighbors = sample_neighbors(self.dis_list, unique_nodes_list, self.restart_prob, self.num_walks, 'dis')
+        tasks = split_list(unique_nodes_list, self.workers)
+        def sample_adj(nodes):
+            return sample_neighbors(self.adj_list,nodes,self.restart_prob,self.num_walks,'adj')
+        def sample_dis(nodes):
+            return sample_neighbors(self.dis_list, nodes, self.restart_prob, self.num_walks, 'dis')
+
+        pool=mp.Pool(self.workers)
+        adj_neighbors=pool.map(sample_adj,tasks)
+        adj_neighbors=[y for x in adj_neighbors for y in x]
+        dis_neighbors=pool.map(sample_dis,tasks)
+        dis_neighbors = [y for x in dis_neighbors for y in x]
+
+
         self_feats = self.id2feat(torch.tensor(unique_nodes_list).to(self.device))
         adj_feats = self.adj_agg(adj_neighbors)
         dis_feats = self.dis_agg(dis_neighbors)
@@ -249,7 +240,15 @@ class SageLayer(nn.Module):
         # feats=self.WC(feats)
         feats = self.leakyRelu(feats)
         feats = F.normalize(feats, p=2, dim=-1)
-        return feats
+        res = []
+        for node in nodes:
+            res.append(feats[unique_nodes[int(node)]])
+        res = torch.stack(res, dim=0)
+        if self.id==2:
+            end_time=time.time()
+            print("运行时间: ", end_time - start_time)
+
+        return res
 
 
 
@@ -276,7 +275,7 @@ class GraphSage(nn.Module):
                                 output_dim=embed_dim, device=device, dropout=dropout, workers=workers,id=2)
         self.layer1 = SageLayer(id2feat=lambda nodes: self.layer2(nodes), adj_list=adj, dis_list=dis,
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
-                                output_dim=embed_dim, device=device, dropout=dropout, workers=workers,id=1)
+                                output_dim=embed_dim, device=device, dropout=dropout, workers=2,id=1)
 
     def forward(self, nodes):
         feats = self.layer1(nodes)
