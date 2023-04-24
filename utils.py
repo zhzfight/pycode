@@ -12,6 +12,8 @@ import torch.nn.functional as F
 import random
 from geographiclib.geodesic import Geodesic
 from tqdm import tqdm
+from multiprocessing import Pool
+
 geod = Geodesic.WGS84
 
 
@@ -57,18 +59,11 @@ def random_walk_with_restart(graph, start_node, restart_prob,num_walks,adjOrDis)
             adj_list.append(current_node)
     return adj_list
 
+pool=Pool()
 def sample_neighbors(graph,nodes,restart_prob,num_walks,adjOrDis):
-    neighbors=[]
-    for node in nodes:
-        neighbor=random_walk_with_restart(graph,node,restart_prob,num_walks,adjOrDis)
-        neighbors.append(neighbor)
-    return neighbors
-def sample_neighbors(graph,nodes,restart_prob,num_walks,adjOrDis):
-    neighbors=[]
-    for node in nodes:
-        neighbor=random_walk_with_restart(graph,node,restart_prob,num_walks,adjOrDis)
-        neighbors.append(neighbor)
-    return neighbors
+    parameters=[(graph,node,restart_prob,num_walks,adjOrDis) for node in nodes]
+    res=pool.starmap(random_walk_with_restart,parameters)
+    return res
 
 def get_node_geo_context_neighbors(index, nodes, geo_dis):
     neighbors = []
