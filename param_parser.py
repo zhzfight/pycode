@@ -30,11 +30,11 @@ def parameter_parser():
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,
-                        default=0.3,
+                        default=0.4,
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=99,
+                        default=49,
                         help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,
@@ -64,7 +64,7 @@ def parameter_parser():
 
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=120,
+                        default=240,
                         help='sage embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
@@ -84,7 +84,7 @@ def parameter_parser():
                         help='List of hidden dims for gcn layers')
     parser.add_argument('--transformer-nhid',
                         type=int,
-                        default=256,
+                        default=1024,
                         help='Hid dim in TransformerEncoder')
     parser.add_argument('--transformer-nlayers',
                         type=int,
@@ -122,7 +122,7 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=18,
+                        default=20,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
@@ -130,11 +130,11 @@ def parameter_parser():
                         help='Number of epochs to train.')
     parser.add_argument('--lr',
                         type=float,
-                        default=0.001,
+                        default=0.01,
                         help='Initial learning rate.')
     parser.add_argument('--lr-scheduler-factor',
                         type=float,
-                        default=0.01,
+                        default=0.1,
                         help='Learning rate scheduler factor')
     parser.add_argument('--weight_decay',
                         type=float,

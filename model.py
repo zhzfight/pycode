@@ -189,6 +189,8 @@ class SageLayer(nn.Module):
         self.W_dis = nn.Linear(input_dim, int(output_dim / 3), bias=False)
         #self.WC=nn.Linear(embed_dim,embed_dim)
         self.bias=nn.Parameter(torch.FloatTensor(output_dim))
+        self.buffer={}
+        self.init_weights()
 
     def init_weights(self):
         initrange = 0.1
@@ -201,29 +203,34 @@ class SageLayer(nn.Module):
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
-        unique_nodes_list=list(set([int(node) for node in nodes]))
+
+
+        unique_nodes_list=list(set([int(node) for node in nodes]).difference(self.buffer.keys()))
         unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
         adj_neighbors = sample_neighbors(self.adj_list, unique_nodes_list, self.restart_prob, self.num_walks, 'adj')
         dis_neighbors = sample_neighbors(self.dis_list, unique_nodes_list, self.restart_prob, self.num_walks, 'dis')
         self_feats = self.id2feat(torch.tensor(unique_nodes_list).to(self.device))
-        self_feats = F.dropout(self_feats, p=self.dropout, training=self.training)
         adj_feats = self.adj_agg(adj_neighbors)
         dis_feats = self.dis_agg( dis_neighbors)
         adj_feats = self.W_adj(adj_feats)
         self_feats = self.W_self(self_feats)
+        self_feats = F.dropout(self_feats, p=self.dropout, training=self.training)
         dis_feats=self.W_dis(dis_feats)
         feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1)+self.bias
         #feats=self.WC(feats)
         feats=self.leakyRelu(feats)
         feats = F.normalize(feats, p=2, dim=-1)
+        for node in unique_nodes_list:
+            self.buffer[node]=feats[unique_nodes[node]]
 
         res=[]
         for node in nodes:
-            res.append(feats[unique_nodes[int(node)]])
+            res.append(self.buffer[int(node)])
         res=torch.stack(res,dim=0)
-
-
         return res
+
+    def resetBuffer(self):
+        self.buffer.clear()
 
 
 class GraphSage(nn.Module):
@@ -250,7 +257,11 @@ class GraphSage(nn.Module):
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
                                 output_dim=embed_dim, device=device, dropout=dropout)
     def forward(self, nodes):
-        return self.layer2(nodes)
+        feats= self.layer2(nodes)
+        self.layer2.resetBuffer()
+        self.layer1.resetBuffer()
+
+        return feats
 
 
 class TransformerModel(nn.Module):
@@ -277,7 +288,7 @@ class TransformerModel(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, src_mask):
-        #src = src * math.sqrt(self.embed_size)
+        src = src * math.sqrt(self.embed_size)
         src = self.pos_encoder(src)
         x = self.transformer_encoder(src, src_mask)
         out_poi = self.decoder_poi(x)
