@@ -425,7 +425,7 @@ def train(args):
             # Final loss
             loss = loss_poi + loss_cat
             optimizer.zero_grad()
-            loss.backward()
+            loss.backward(retain_graph=True)
             optimizer.step()
 
             # Performance measurement
