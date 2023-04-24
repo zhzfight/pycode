@@ -18,6 +18,8 @@ geod = Geodesic.WGS84
 
 def split_list(a_list, x):
     # 计算每份的长度和余数
+    if x > len(a_list):
+        x = len(a_list)
     k, m = divmod(len(a_list), x)
     # 使用列表生成器返回x份列表
     return [a_list[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(x)]
