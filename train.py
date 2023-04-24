@@ -24,7 +24,7 @@ from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_
     mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss,adj_list
 import random
 import multiprocess as mp
-mp.set_start_method('spawn')
+
 
 def train(args):
     args.save_dir = increment_path(Path(args.project) / args.name, exist_ok=args.exist_ok, sep='-')
@@ -707,6 +707,7 @@ def train(args):
 
 if __name__ == '__main__':
     args = parameter_parser()
+    mp.set_start_method('spawn')
     # The name of node features in NYC/graph_X.csv
     args.feature1 = 'checkin_cnt'
     args.feature2 = 'poi_catid'
