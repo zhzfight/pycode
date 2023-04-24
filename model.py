@@ -212,14 +212,20 @@ class SageLayer(nn.Module):
         unique_nodes_list = list(set([int(node) for node in nodes]))
         unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
         if self.id==1:
-            print('nodes num',len(unique_nodes_list))
+            print('layer1 nodes num',len(unique_nodes_list))
             tasks = split_list(unique_nodes_list, self.workers)
             pool=mp.Pool(self.workers)
             feats=pool.map(self.help,tasks)
+            for result in feats:
+                if isinstance(result, Exception):
+                    # 如果结果是一个异常对象，那么打印异常信息
+                    print(f"Error: {result}")
             feats=torch.cat(feats,dim=0)
         else:
+            print('layer2 nodes num',len(unique_nodes_list))
             feats=self.help(unique_nodes_list)
 
+        assert feats.shape[0]==len(unique_nodes_list)
         res = []
         for node in nodes:
             res.append(feats[unique_nodes[int(node)]])
