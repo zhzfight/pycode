@@ -197,6 +197,7 @@ class SageLayer(nn.Module):
         # self.WC=nn.Linear(embed_dim,embed_dim)
         self.bias = nn.Parameter(torch.FloatTensor(output_dim))
         self.init_weights()
+        self.buffer={}
 
     def init_weights(self):
         initrange = 0.1
@@ -204,17 +205,23 @@ class SageLayer(nn.Module):
         self.W_adj.weight.data.uniform_(-initrange, initrange)
         self.W_dis.weight.data.uniform_(-initrange, initrange)
         self.bias.data.zero_()
+    def reset_buffer(self):
+        self.buffer.clear()
 
     def forward(self, nodes):
         """
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
-        if self.id==2:
+        if self.id!=1:
             start_time=time.time()
 
-        unique_nodes_list = list(set([int(node) for node in nodes]))
-        unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
+        if self.id!=1:
+            unique_nodes_list = list(set([int(node) for node in nodes]).difference(self.buffer.keys()))
+        else:
+            unique_nodes_list = list(set([int(node) for node in nodes]))
+            unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
+
 
         adj_neighbors=sample_neighbors(self.adj_list,unique_nodes_list,self.restart_prob,self.num_walks,'adj')
         dis_neighbors=sample_neighbors(self.dis_list,unique_nodes_list,self.restart_prob,self.num_walks,'dis')
@@ -231,11 +238,17 @@ class SageLayer(nn.Module):
         # feats=self.WC(feats)
         feats = self.leakyRelu(feats)
         feats = F.normalize(feats, p=2, dim=-1)
+        self.buffer.update(zip(unique_nodes_list,feats))
+
         res = []
-        for node in nodes:
-            res.append(feats[unique_nodes[int(node)]])
+        if self.id!=1:
+            for node in nodes:
+                res.append(self.buffer[int(node)])
+        else:
+            for node in nodes:
+                res.append(feats[unique_nodes[int(node)]])
         res = torch.stack(res, dim=0)
-        if self.id==2:
+        if self.id!=1:
             end_time=time.time()
             print("layer time: ", end_time - start_time)
 
@@ -271,6 +284,8 @@ class GraphSage(nn.Module):
     def forward(self, nodes):
         feats = self.layer1(nodes)
         return feats
+    def reset_buffer(self):
+        self.layer2.reset_buffer()
 
 
 class TransformerModel(nn.Module):
