@@ -3,6 +3,7 @@ import logging
 import os
 import pathlib
 import pickle
+import time
 import zipfile
 from pathlib import Path
 
@@ -387,6 +388,7 @@ def train(args):
             pois=[each[0] for sample in batch for each in sample[1] ]
             poi_embeddings=sage_model(torch.tensor(pois).to(args.device))
             # Convert input seq to embeddings
+            start_time = time.time()
             embedding_index=0
             for sample in batch:
                 # sample[0]: traj_id, sample[1]: input_seq, sample[2]: label_seq
@@ -481,7 +483,8 @@ def train(args):
                              f'label_seq_cat:{[poi_idx2cat_idx_dict[each[0]] for each in batch[sample_idx][2]]}\n'
                              f'pred_seq_cat:{list(np.argmax(batch_pred_cats, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'+
                              '=' * 100)
-
+            end_time = time.time()
+            print("caculate time: ", end_time - start_time)
         # train end --------------------------------------------------------------------------------------------------------
         user_embed_model.eval()
         cat_embed_model.eval()

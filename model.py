@@ -234,10 +234,10 @@ class SageLayer(nn.Module):
         res = []
         for node in nodes:
             res.append(feats[unique_nodes[int(node)]])
-        res = torch.cat(res, dim=0)
+        res = torch.stack(res, dim=0)
         if self.id==2:
             end_time=time.time()
-            print("运行时间: ", end_time - start_time)
+            print("layer time: ", end_time - start_time)
 
         return res
 
