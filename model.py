@@ -1,4 +1,5 @@
 import math
+import queue
 import time
 
 import torch
@@ -177,7 +178,7 @@ class SageLayer(nn.Module):
     """
 
     def __init__(self, id2feat, adj_list, dis_list, restart_prob, num_walks, input_dim, output_dim, device, dropout,
-                 workers,id):
+                 id,adj_queues,dis_queues):
         super(SageLayer, self).__init__()
         self.id2feat = id2feat
         self.dis_agg = MeanAggregator(self.id2feat, device)
@@ -189,7 +190,8 @@ class SageLayer(nn.Module):
         self.num_walks = num_walks
         self.leakyRelu = nn.LeakyReLU(0.2)
         self.dropout = dropout
-        self.workers = workers
+        self.adj_queues=adj_queues
+        self.dis_queues=dis_queues
         self.id=id
         self.W_self = nn.Linear(input_dim, int(output_dim / 3), bias=False)
         self.W_adj = nn.Linear(input_dim, int(output_dim / 3), bias=False)
@@ -222,10 +224,30 @@ class SageLayer(nn.Module):
             unique_nodes_list = list(set([int(node) for node in nodes]))
             unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
 
+        adj_neighbors=[[] for _ in unique_nodes_list]
+        dis_neighbors=[[] for _ in unique_nodes_list]
+        missing_adj_idx=[]
+        missing_dis_idx=[]
+        for idx,node in enumerate(unique_nodes_list):
+            try:
+                random_walk=self.adj_queues[node].get_nowait()
+                adj_neighbors[idx]=random_walk
+            except queue.Empty:
+                missing_adj_idx.append(idx)
+            try:
+                random_walk=self.dis_queues[node].get_nowait()
+                dis_neighbors[idx]=random_walk
+            except queue.Empty:
+                missing_dis_idx.append(idx)
 
-        adj_neighbors=sample_neighbors(self.adj_list,unique_nodes_list,self.restart_prob,self.num_walks,'adj')
-        dis_neighbors=sample_neighbors(self.dis_list,unique_nodes_list,self.restart_prob,self.num_walks,'dis')
-
+        if len(missing_adj_idx)!=0:
+            missing_adj_neighbors=sample_neighbors(self.adj_list,[unique_nodes_list[i] for i in missing_adj_idx],self.restart_prob,self.num_walks,'adj')
+            for idx,missing_adj_neighbor in zip(missing_adj_idx,missing_adj_neighbors):
+                adj_neighbors[idx]=missing_adj_neighbor
+        if len(missing_dis_idx)!=0:
+            missing_dis_neighbors=sample_neighbors(self.dis_list,[unique_nodes_list[i] for i in missing_dis_idx],self.restart_prob,self.num_walks,'dis')
+            for idx,missing_dis_neighbor in zip(missing_dis_idx,missing_dis_neighbors):
+                dis_neighbors[idx]=missing_dis_neighbor
 
         self_feats = self.id2feat(torch.tensor(unique_nodes_list).to(self.device))
         adj_feats = self.adj_agg(adj_neighbors)
@@ -258,7 +280,7 @@ class SageLayer(nn.Module):
 
 
 class GraphSage(nn.Module):
-    def __init__(self, X, num_node, embed_dim, adj, dis, device, restart_prob, num_walks, dropout, workers):
+    def __init__(self, X, num_node, embed_dim, adj, dis, device, restart_prob, num_walks, dropout, workers,adj_queues,dis_queues):
         super(GraphSage, self).__init__()
         self.id2node = X
         self.device = device
@@ -276,10 +298,10 @@ class GraphSage(nn.Module):
 
         self.layer2 = SageLayer(id2feat=lambda nodes: self.id2node[nodes], adj_list=adj, dis_list=dis,
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=X.shape[1],
-                                output_dim=embed_dim, device=device, dropout=dropout, workers=workers,id=2)
+                                output_dim=embed_dim, device=device, dropout=dropout, id=2,adj_queues=adj_queues,dis_queues=dis_queues)
         self.layer1 = SageLayer(id2feat=lambda nodes: self.layer2(nodes), adj_list=adj, dis_list=dis,
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
-                                output_dim=embed_dim, device=device, dropout=dropout, workers=2,id=1)
+                                output_dim=embed_dim, device=device, dropout=dropout,id=1,adj_queues=adj_queues,dis_queues=dis_queues)
 
     def forward(self, nodes):
         feats = self.layer1(nodes)
