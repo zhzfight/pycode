@@ -216,17 +216,8 @@ class SageLayer(nn.Module):
         unique_nodes_list = list(set([int(node) for node in nodes]))
         unique_nodes = {n: i for i, n in enumerate(unique_nodes_list)}
 
-        tasks = split_list(unique_nodes_list, self.workers)
-        def sample_adj(nodes):
-            return sample_neighbors(self.adj_list,nodes,self.restart_prob,self.num_walks,'adj')
-        def sample_dis(nodes):
-            return sample_neighbors(self.dis_list, nodes, self.restart_prob, self.num_walks, 'dis')
-
-        pool=mp.Pool(self.workers)
-        adj_neighbors=pool.map(sample_adj,tasks)
-        adj_neighbors=[y for x in adj_neighbors for y in x]
-        dis_neighbors=pool.map(sample_dis,tasks)
-        dis_neighbors = [y for x in dis_neighbors for y in x]
+        adj_neighbors=sample_neighbors(self.adj_list,unique_nodes_list,self.restart_prob,self.num_walks,'adj')
+        dis_neighbors=sample_neighbors(self.dis_list,unique_nodes_list,self.restart_prob,self.num_walks,'dis')
 
 
         self_feats = self.id2feat(torch.tensor(unique_nodes_list).to(self.device))
@@ -243,7 +234,7 @@ class SageLayer(nn.Module):
         res = []
         for node in nodes:
             res.append(feats[unique_nodes[int(node)]])
-        res = torch.stack(res, dim=0)
+        res = torch.cat(res, dim=0)
         if self.id==2:
             end_time=time.time()
             print("运行时间: ", end_time - start_time)
