@@ -79,6 +79,7 @@ class GCN(nn.Module):
         self.leaky_relu = nn.LeakyReLU(0.2)
 
         channels = [ninput] + nhid + [noutput]
+        print(len(channels))
         for i in range(len(channels) - 1):
             gcn_layer = GraphConvolution(channels[i], channels[i + 1])
             self.gcn.append(gcn_layer)
@@ -238,6 +239,9 @@ class GRUModel(nn.Module):
             hid = self.grucell(src[:, 0, :], hid)
             output[:, 0, :] = hid
         x[:,0,:]=output[:,0,:]
+        for i in range(1,src.shape[1]):
+            attn_i=attns[:,i,:i]
+            output_i=output[:,:i,:]
 
 
 
