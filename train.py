@@ -281,7 +281,7 @@ def train(args):
                     break
             print(self.adjOrdis, self.id, 'quit')
 
-    threshold = 20  # 队列大小阈值
+    threshold = 40  # 队列大小阈值
     adj_queues = {node: multiprocessing.Queue() for node in range(num_pois)}  # 创建多个队列
     dis_queues = {node: multiprocessing.Queue() for node in range(num_pois)}  # 创建多个队列
     tasks = split_list([i for i in range(num_pois)], int(args.cpus / 2))
@@ -523,6 +523,7 @@ def train(args):
                                  '=' * 100)
                 end_time = time.time()
                 print("caculate time: ", end_time - start_time)
+            print('train end')
             # train end --------------------------------------------------------------------------------------------------------
             user_embed_model.eval()
             cat_embed_model.eval()
@@ -566,7 +567,7 @@ def train(args):
 
                     batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
                     embedding_index += len(input_seq)
-
+                sage_model.reset_buffer()
 
                 # Pad seqs for batch training
                 batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
@@ -643,6 +644,7 @@ def train(args):
                                  f'pred_seq_cat:{list(np.argmax(batch_pred_cats, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
     
                                  '=' * 100)
+            print('valid end')
             # valid end --------------------------------------------------------------------------------------------------------
 
             # Calculate epoch metrics
