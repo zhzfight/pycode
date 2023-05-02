@@ -6,6 +6,7 @@ import pathlib
 import pickle
 import time
 import zipfile
+import traceback
 from multiprocessing import Process
 from pathlib import Path
 
@@ -748,6 +749,7 @@ def train(args):
                 print(f'val_epochs_mrr_list={[float(f"{each:.4f}") for each in val_epochs_mrr_list]}', file=f)
     except Exception as e:
         print("Stopping... ")
+        print(traceback.format_exc())
         print(e)
     finally:
         stop_event.set()
