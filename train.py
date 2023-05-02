@@ -282,7 +282,7 @@ def train(args):
                     break
             print(self.adjOrdis, self.id, 'quit')
 
-    threshold = 40  # 队列大小阈值
+    threshold = 100  # 队列大小阈值
     adj_queues = {node: multiprocessing.Queue() for node in range(num_pois)}  # 创建多个队列
     dis_queues = {node: multiprocessing.Queue() for node in range(num_pois)}  # 创建多个队列
     tasks = split_list([i for i in range(num_pois)], int(args.cpus / 2))
@@ -499,7 +499,7 @@ def train(args):
                 train_batches_cat_loss_list.append(loss_cat.detach().cpu().numpy())
 
                 # Report training progress
-                if (b_idx % (1)) == 0:
+                if (b_idx % (20)) == 0:
                     sample_idx = 0
                     batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                     logging.info(f'Epoch:{epoch}, batch:{b_idx}, '
@@ -621,7 +621,7 @@ def train(args):
 
                 val_batches_cat_loss_list.append(loss_cat.detach().cpu().numpy())
                 # Report validation progress
-                if (vb_idx % (1)) == 0:
+                if (vb_idx % (10)) == 0:
                     sample_idx = 0
                     batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                     logging.info(f'Epoch:{epoch}, batch:{vb_idx}, '
@@ -642,8 +642,7 @@ def train(args):
                                  f'pred_seq_poi_wo_attn:{list(np.argmax(batch_pred_pois_wo_attn, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
                                  f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
                                  f'label_seq_cat:{[poi_idx2cat_idx_dict[each[0]] for each in batch[sample_idx][2]]}\n'
-                                 f'pred_seq_cat:{list(np.argmax(batch_pred_cats, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
-    
+                                 f'pred_seq_cat:{list(np.argmax(batch_pred_cats, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'+
                                  '=' * 100)
             print('valid end')
             # valid end --------------------------------------------------------------------------------------------------------

@@ -34,11 +34,11 @@ def parameter_parser():
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,
-                        default=0.4,
+                        default=0.2,
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=29,
+                        default=9,
                         help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,
@@ -68,7 +68,7 @@ def parameter_parser():
 
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=240,
+                        default=120,
                         help='sage embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
@@ -126,7 +126,7 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=40,
+                        default=20,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
