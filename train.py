@@ -100,7 +100,7 @@ def train(args):
 
     # POI id to index
     nodes_df = pd.read_csv(args.data_node_feats)
-    poi_ids = list(set(nodes_df['node_name/poi_id'].tolist()))
+    poi_ids = nodes_df['node_name/poi_id'].tolist()
     poi_id2idx_dict = dict(zip(poi_ids, range(len(poi_ids))))
 
     # Cat id to index
