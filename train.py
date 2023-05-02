@@ -281,7 +281,7 @@ def train(args):
                     break
             print(self.adjOrdis, self.id, 'quit')
 
-    threshold = 5  # 队列大小阈值
+    threshold = 10  # 队列大小阈值
     adj_queues = {node: multiprocessing.Queue() for node in range(num_pois)}  # 创建多个队列
     dis_queues = {node: multiprocessing.Queue() for node in range(num_pois)}  # 创建多个队列
     tasks = split_list([i for i in range(num_pois)], int(args.cpus / 2))
@@ -548,21 +548,25 @@ def train(args):
                 batch_seq_embeds = []
                 batch_seq_labels_poi = []
                 batch_seq_labels_cat = []
-
+                embedding_index = 0
                 # Convert input seq to embeddings
+                pois = [each[0] for sample in batch for each in sample[1]]
+                poi_embeddings = sage_model(torch.tensor(pois).to(args.device))
                 for sample in batch:
                     traj_id = sample[0]
                     input_seq = [each[0] for each in sample[1]]
                     label_seq = [each[0] for each in sample[2]]
 
                     label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
-                    input_seq_embed = torch.stack(input_traj_to_embeddings(sample))
+                    input_seq_embed = torch.stack(input_traj_to_embeddings(sample, poi_embeddings, embedding_index))
                     batch_seq_embeds.append(input_seq_embed)
                     batch_seq_lens.append(len(input_seq))
                     batch_input_seqs.append(input_seq)
                     batch_seq_labels_poi.append(torch.LongTensor(label_seq))
 
                     batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
+                    embedding_index += len(input_seq)
+
 
                 # Pad seqs for batch training
                 batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
