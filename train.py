@@ -373,6 +373,7 @@ def train(args):
         user_embed_model = user_embed_model.to(device=args.device)
         cat_embed_model = cat_embed_model.to(device=args.device)
         seq_model = seq_model.to(device=args.device)
+        p_test_embeding=p_test_embeding.to(device=args.device)
 
         # %% Loop epoch
         # For plotting
