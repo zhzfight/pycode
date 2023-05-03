@@ -242,7 +242,7 @@ class GRUModel(nn.Module):
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
-        time_mask = torch.zeros((src.shape[0], src.shape[1]), dtype=torch.bool)
+        time_mask = torch.zeros((src.shape[0], src.shape[1]), dtype=torch.bool, device=self.device)
         for i in range(src.shape[0]):
             time_mask[i, batch_seq_lens[i]:] = True
 
