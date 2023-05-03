@@ -34,11 +34,11 @@ def parameter_parser():
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,
-                        default=0.2,
+                        default=0.1,
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=9,
+                        default=12,
                         help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,
@@ -80,7 +80,7 @@ def parameter_parser():
                         help='Dropout rate for gcn')
     parser.add_argument('--sage-dropout',
                         type=float,
-                        default=0.3,
+                        default=0.1,
                         help='Dropout rate for sage')
     parser.add_argument('--gcn-nhid',
                         type=list,

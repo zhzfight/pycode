@@ -215,8 +215,7 @@ class SageLayer(nn.Module):
         Generates embeddings for a batch of nodes.
         nodes     -- list of nodes
         """
-        if self.id!=1:
-            start_time=time.time()
+
 
         if self.id!=1:
             unique_nodes_list = list(set([int(node) for node in nodes]).difference(self.buffer.keys()))
@@ -270,9 +269,6 @@ class SageLayer(nn.Module):
             for node in nodes:
                 res.append(feats[unique_nodes[int(node)]])
         res = torch.stack(res, dim=0)
-        if self.id!=1:
-            end_time=time.time()
-            print("layer time: ", end_time - start_time)
 
         return res
 
