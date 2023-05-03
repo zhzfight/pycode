@@ -34,11 +34,11 @@ def parameter_parser():
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,
-                        default=0.1,
+                        default=0.5,
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=12,
+                        default=29,
                         help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,
@@ -126,7 +126,7 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=20,
+                        default=10,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
