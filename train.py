@@ -274,7 +274,7 @@ def train(args):
     args.seq_input_embed = args.poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim
     seq_model = GRUModel(num_poi=num_pois,
                          num_cat=num_cats,
-                         nhid=args.seqmodel_nhid,
+                         nhid=args.seq_input_embed,
                          batch_size=args.batch,
                          device=args.device,
                          dropout=args.gru_dropout)
