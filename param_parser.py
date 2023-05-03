@@ -11,6 +11,7 @@ else:
 
 def parameter_parser():
     parser = argparse.ArgumentParser(description="Run GETNext.")
+    parser.add_argument('--max-len',type=int,default=30,help='max seq len')
     parser.add_argument('--seed',
                         type=int,
                         default=42,

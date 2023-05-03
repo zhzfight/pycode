@@ -108,7 +108,7 @@ def train(args):
 
     # POI id to index
     nodes_df = pd.read_csv(args.data_node_feats)
-    poi_ids = list(set(nodes_df['node_name/poi_id'].tolist()))
+    poi_ids = nodes_df['node_name/poi_id'].tolist()
     poi_id2idx_dict = dict(zip(poi_ids, range(len(poi_ids))))
 
     # Cat id to index
@@ -150,7 +150,22 @@ def train(args):
 
                 if len(input_seq) < args.short_traj_thres:
                     continue
-
+                '''    
+                if len(input_seq)> args.max_len:
+                    parts=int(len(input_seq)/args.max_len)
+                    for i in range(parts):
+                        self.traj_seqs.append(traj_id)
+                        self.input_seqs.append(input_seq[i*args.max_len:(i+1)*args.max_len])
+                        self.label_seqs.append(label_seq[i*args.max_len:(i+1)*args.max_len])
+                    if parts*args.max_len!=len(input_seq):
+                        self.traj_seqs.append(traj_id)
+                        self.input_seqs.append(input_seq[len(input_seq)-args.max_len:])
+                        self.label_seqs.append(label_seq[len(input_seq)-args.max_len:])
+                else:
+                    self.traj_seqs.append(traj_id)
+                    self.input_seqs.append(input_seq)
+                    self.label_seqs.append(label_seq)
+                '''
                 self.traj_seqs.append(traj_id)
                 self.input_seqs.append(input_seq)
                 self.label_seqs.append(label_seq)
@@ -428,7 +443,7 @@ def train(args):
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
             y_time = label_padded_time.to(device=args.device, dtype=torch.float)
             y_cat = label_padded_cat.to(device=args.device, dtype=torch.long)
-            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs,X,A,batch_input_seqs_ts)
+            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs_ts)
 
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
             loss_time = criterion_time(torch.squeeze(y_pred_time), y_time)
@@ -560,7 +575,7 @@ def train(args):
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
             y_time = label_padded_time.to(device=args.device, dtype=torch.float)
             y_cat = label_padded_cat.to(device=args.device, dtype=torch.long)
-            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs,X,A,batch_input_seqs_ts)
+            y_pred_poi, y_pred_time, y_pred_cat = seq_model(x,batch_seq_lens,batch_input_seqs_ts)
 
             # Calculate loss
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)

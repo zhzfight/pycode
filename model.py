@@ -202,8 +202,9 @@ class GRUModel(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
-        self.hour_embedding=nn.Embedding(24,nhid,padding_idx=0)
+        self.tu=24*3600
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
+        self.hour_embedding=nn.Embedding(50,nhid,padding_idx=0)
         self.W_Q=nn.Linear(embed_size,nhid)
         self.W_K=nn.Linear(embed_size,nhid)
         self.W_V=nn.Linear(embed_size,nhid)
@@ -219,41 +220,42 @@ class GRUModel(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src,batch_seq_lens,batch_input_seqs, X,A,batch_input_seqs_ts,batch_label_seq_ts):
-        hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1])).to(self.device)
-        dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1])).to(self.device)
+    def forward(self, src,batch_seq_lens,batch_input_seqs_ts):
+        hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
+        dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
+
+
         for i in range(src.shape[0]):
-            for j in range(1,batch_seq_lens[i]):
-                for k in range(j):
-                    hourInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/3600)%24
-                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(3600*24))
+            for j in range(batch_seq_lens[i]):
+                for k in range(j+1):
+                    if i==j:
+                        hourInterval[i][j][k]=1
+                    else:
+                        hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/1800)+2
+                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
                     if dayInterval[i][j][k]>6:
                         dayInterval[i][j][k]=7
-            for k in range(batch_seq_lens[i]+1):
-                hourInterval[i][batch_seq_lens[i]][k]=int((batch_label_seq_ts[i][-1]-batch_input_seqs_ts[i][k])/3600)%24
-                dayInterval[i][batch_seq_lens[i]][k] = int((batch_label_seq_ts[i][-1] - batch_input_seqs_ts[i][k]) / (3600 * 24))
-                if dayInterval[i][batch_seq_lens[i]][k] > 6:
-                    dayInterval[i][batch_seq_lens[i]][k] = 7
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
         dayInterval_embedding=self.day_embedding(dayInterval)
 
+
+        # mask attn
+        attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
+        time_mask = torch.zeros((src.shape[0], src.shape[1]), dtype=torch.bool)
+        for i in range(src.shape[0]):
+            time_mask[i, batch_seq_lens[i]:] = True
+
+        attn_mask = attn_mask.unsqueeze(0).expand(src.shape[0], -1, -1)
+        time_mask = time_mask.unsqueeze(-1).expand(-1, -1, src.shape[1])
+
         Q=self.W_Q(src)
-        K=self.W_V(src)
+        K=self.W_K(src)
         V=self.W_V(src)
 
         attn_weight=Q.matmul(torch.transpose(K,1,2))
         attn_weight+=hourInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
         attn_weight+=dayInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
-
-        # mask attn
-        attn_mask=torch.tril(torch.ones((src.shape[1],src.shape[1]),dtype=torch.bool,device=self.device))
-        time_mask=torch.zeros((src.shape[0],src.shape[1]),dtype=torch.bool)
-        for i in range(src.shape[0]):
-            time_mask[i,:batch_seq_lens[i]]=True
-
-        attn_mask=attn_mask.unsqueeze(0).expand(src.shape[0],-1,-1)
-        time_mask=time_mask.unsqueeze(-1).expand(-1,-1,src.shape[1])
 
         paddings = torch.ones(attn_weight.shape) * (-2 ** 32 + 1)
         paddings=paddings.to(self.device)
@@ -264,13 +266,6 @@ class GRUModel(nn.Module):
 
         attn_weight=F.softmax(attn_weight,dim=-1)
         x=attn_weight.matmul(V) #B,L,D
-        x+=attn_weight.matmul(hourInterval_embedding)
-        x+=attn_weight.matmul(dayInterval_embedding)
-        # the final step
-
-
-
-
 
 
 
@@ -278,3 +273,67 @@ class GRUModel(nn.Module):
         out_time = self.decoder_time(x)
         out_cat = self.decoder_cat(x)
         return out_poi, out_time, out_cat
+
+
+
+class CustomAttention(nn.Module):
+    def __init__(self, embed_dim, dropout=None):
+        super(CustomAttention, self).__init__()
+        self.embed_dim = embed_dim
+        self.dropout = nn.Dropout(dropout)
+        # Define the projection matrices for query, key and value
+        self.q_proj = nn.Linear(embed_dim, embed_dim)
+        self.k_proj = nn.Linear(embed_dim, embed_dim)
+        self.v_proj = nn.Linear(embed_dim, embed_dim)
+        # Define the output projection matrix
+        self.out_proj = nn.Linear(embed_dim, embed_dim)
+
+    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None):
+        # Get the batch size and sequence length
+        bsz, tgt_len, embed_dim = query.size()
+        src_len = key.size(1)
+
+        # Check the dimension of the inputs
+        assert embed_dim == self.embed_dim
+        assert list(query.size()) == [bsz, tgt_len, embed_dim]
+        assert list(key.size()) == [bsz, src_len, embed_dim]
+        assert list(value.size()) == [bsz, src_len, embed_dim]
+
+        # Project the query, key and value
+        q = self.q_proj(query)
+        k = self.k_proj(key)
+        v = self.v_proj(value)
+
+        # Transpose the query and key to compute the attention score
+        q = q.transpose(1, 2) # shape: (bsz, embed_dim, tgt_len)
+        k = k.transpose(1, 2) # shape: (bsz, embed_dim, src_len)
+
+        # Compute the attention score using dot product
+        attn_output_weights = torch.bmm(q, k) # shape: (bsz, tgt_len, src_len)
+
+        # Scale the attention score by 1/sqrt(d)
+        attn_output_weights /= math.sqrt(self.embed_dim)
+
+        # Apply the attention mask if given
+        if attn_mask is not None:
+            assert list(attn_mask.size()) == [tgt_len, src_len]
+            attn_output_weights += attn_mask.unsqueeze(0)
+
+        # Apply the key padding mask if given
+        if key_padding_mask is not None:
+            assert list(key_padding_mask.size()) == [bsz, src_len]
+            attn_output_weights.masked_fill_(key_padding_mask.unsqueeze(1), float('-inf'))
+
+        # Apply softmax to get the attention weights
+        attn_output_weights = F.softmax(attn_output_weights, dim=-1)
+
+        # Apply dropout to the attention weights
+        attn_output_weights = self.dropout(attn_output_weights)
+
+        # Multiply the attention weights with the value
+        attn_output = torch.bmm(attn_output_weights, v) # shape: (bsz, tgt_len, embed_dim)
+
+        # Project the output to the original dimension
+        attn_output = self.out_proj(attn_output)
+
+        return attn_output
