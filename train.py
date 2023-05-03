@@ -276,8 +276,6 @@ def train(args):
                         missing_count+=1
                 if missing_count<5:
                     time.sleep(0.5)
-                else:
-                    time.sleep(0.01)
                 if self.stop_event.is_set():
                     break
             print(self.adjOrdis, self.id, 'quit')
