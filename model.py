@@ -189,25 +189,46 @@ class Time2Vec(nn.Module):
 
 
 class GRUModel(nn.Module):
-    def __init__(self, num_poi, num_cat, embed_size,nhid,batch_size, node_attn_in_features,node_attn_nhid,device,dropout,tu):
+    def __init__(self, num_poi, num_cat, nhid,batch_size, device,dropout):
         super(GRUModel, self).__init__()
 
-        self.dropout=nn.Dropout(dropout)
 
         self.device=device
         self.nhid=nhid
         self.batch_size=batch_size
         # self.encoder = nn.Embedding(num_poi, embed_size)
-        self.embed_size = embed_size
+
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
         self.hour_embedding=nn.Embedding(50,nhid,padding_idx=0)
-        self.W_Q=nn.Linear(embed_size,nhid)
-        self.W_K=nn.Linear(embed_size,nhid)
-        self.W_V=nn.Linear(embed_size,nhid)
+
+        self.W1_Q=nn.Linear(nhid,nhid)
+        self.W1_K=nn.Linear(nhid,nhid)
+        self.W1_V=nn.Linear(nhid,nhid)
+        self.norm11=nn.LayerNorm(nhid)
+        self.feedforward1 = nn.Sequential(
+            nn.Linear(nhid, nhid),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(nhid, nhid)
+        )
+        self.norm12 = nn.LayerNorm(nhid)
+
+        self.W2_Q=nn.Linear(nhid,nhid)
+        self.W2_K=nn.Linear(nhid,nhid)
+        self.W2_V = nn.Linear(nhid, nhid)
+        self.norm21=nn.LayerNorm(nhid)
+        self.feedforward2 = nn.Sequential(
+            nn.Linear(nhid, nhid),
+            nn.ReLU(),
+            nn.Dropout(dropout),
+            nn.Linear(nhid, nhid)
+        )
+        self.norm22 = nn.LayerNorm(nhid)
+
 
 
         self.init_weights()
@@ -223,7 +244,6 @@ class GRUModel(nn.Module):
     def forward(self, src,batch_seq_lens,batch_input_seqs_ts):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-
 
         for i in range(src.shape[0]):
             for j in range(batch_seq_lens[i]):
@@ -249,9 +269,9 @@ class GRUModel(nn.Module):
         attn_mask = attn_mask.unsqueeze(0).expand(src.shape[0], -1, -1)
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, src.shape[1])
 
-        Q=self.W_Q(src)
-        K=self.W_K(src)
-        V=self.W_V(src)
+        Q=self.W1_Q(src)
+        K=self.W1_K(src)
+        V=self.W1_V(src)
 
         attn_weight=Q.matmul(torch.transpose(K,1,2))
         attn_weight+=hourInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
@@ -267,11 +287,39 @@ class GRUModel(nn.Module):
         attn_weight=F.softmax(attn_weight,dim=-1)
         x=attn_weight.matmul(V) #B,L,D
 
+        x=self.norm11(x+src)
+        ffn_output=self.feedforward1(x)
+        ffn_output=self.norm12(x+ffn_output)
+
+        src=ffn_output
+
+        Q = self.W2_Q(src)
+        K = self.W2_K(src)
+        V = self.W2_V(src)
+
+        attn_weight = Q.matmul(torch.transpose(K, 1, 2))
+        attn_weight += hourInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        attn_weight += dayInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
+
+        paddings = torch.ones(attn_weight.shape) * (-2 ** 32 + 1)
+        paddings = paddings.to(self.device)
+
+        attn_weight = torch.where(time_mask, paddings, attn_weight)
+        attn_weight = torch.where(attn_mask, paddings, attn_weight)
+
+        attn_weight = F.softmax(attn_weight, dim=-1)
+        x = attn_weight.matmul(V)  # B,L,D
+
+        x = self.norm21(x + src)
+        ffn_output = self.feedforward2(x)
+        ffn_output = self.norm22(x + ffn_output)
 
 
-        out_poi = self.decoder_poi(x)
-        out_time = self.decoder_time(x)
-        out_cat = self.decoder_cat(x)
+
+
+        out_poi = self.decoder_poi(ffn_output)
+        out_time = self.decoder_time(ffn_output)
+        out_cat = self.decoder_cat(ffn_output)
         return out_poi, out_time, out_cat
 
 

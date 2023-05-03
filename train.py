@@ -274,14 +274,10 @@ def train(args):
     args.seq_input_embed = args.poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim
     seq_model = GRUModel(num_poi=num_pois,
                          num_cat=num_cats,
-                         embed_size= args.seq_input_embed,
                          nhid=args.seqmodel_nhid,
                          batch_size=args.batch,
-                         node_attn_in_features=X.shape[1],
-                         node_attn_nhid=args.node_attn_nhid,
                          device=args.device,
-                         dropout=args.gru_dropout,
-                         tu=tu)
+                         dropout=args.gru_dropout)
 
     # Define overall loss and optimizer
     optimizer = optim.Adam(params=list(poi_embed_model.parameters()) +
