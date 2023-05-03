@@ -38,7 +38,7 @@ def parameter_parser():
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=29,
+                        default=9,
                         help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,

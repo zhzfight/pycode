@@ -52,9 +52,11 @@ def choose_neighbor(graph, node,adjOrDis):
 
 # 进行一次随机游走
 def random_walk_with_restart(graph, start_node, restart_prob,num_walks,adjOrDis):
-    adj_list = [start_node]
+    adj_list = []
     current_node = start_node
-    for _ in range(num_walks):
+    while True:
+        if len(adj_list)>= num_walks:
+            break
         p = random.random()
         if  p < restart_prob: # 以一定概率重启
             current_node=start_node
@@ -66,6 +68,7 @@ def random_walk_with_restart(graph, start_node, restart_prob,num_walks,adjOrDis)
                 continue
             current_node=nei
             adj_list.append(current_node)
+
     return adj_list
 
 
