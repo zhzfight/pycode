@@ -38,7 +38,7 @@ def parameter_parser():
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=9,
+                        default=29,
                         help='random walk with restart step')
     parser.add_argument('--data-node-feats',
                         type=str,
@@ -68,7 +68,7 @@ def parameter_parser():
 
     parser.add_argument('--sage-embed-dim',
                         type=int,
-                        default=120,
+                        default=480,
                         help='sage embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
