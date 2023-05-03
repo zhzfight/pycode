@@ -22,7 +22,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from dataloader import load_graph_adj_mtx, load_graph_node_features
-from model import UserEmbeddings, Time2Vec, CategoryEmbeddings, FuseEmbeddings, TransformerModel, GraphSage
+from model import UserEmbeddings, Time2Vec, CategoryEmbeddings, FuseEmbeddings, TransformerModel, GraphSage,p_test_embed
 from param_parser import parameter_parser
 from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_last_timestep, \
     mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss, adj_list, split_list, random_walk_with_restart
@@ -250,7 +250,7 @@ def train(args):
     A = A.to(device=args.device, dtype=torch.float)
 
     args.gcn_nfeat = X.shape[1]
-
+    '''
     class produceSampleProcess(multiprocessing.Process):
         def __init__(self, tasks, queues, adj_list, restart_prob, num_walks, threshold, adjOrdis, stop_event, id):
             super().__init__()
@@ -293,16 +293,19 @@ def train(args):
         dp = produceSampleProcess(tasks=task,queues=dis_queues, adj_list=dis, restart_prob=args.restart_prob, num_walks=args.num_walks,
                                   threshold=threshold, adjOrdis='dis', stop_event=stop_event, id=idx)
         dp.start()
-
+    '''
     try:
+        '''
         sage_model = GraphSage(X=X, num_node=num_pois, embed_dim=args.sage_embed_dim, restart_prob=args.restart_prob,
                                num_walks=args.num_walks,
                                adj=adj, dis=dis, device=args.device, dropout=args.sage_dropout, workers=args.cpus,
                                adj_queues=adj_queues, dis_queues=dis_queues)
-
+        '''
         # %% Model2: User embedding model, nn.embedding
         num_users = len(user_id2idx_dict)
         user_embed_model = UserEmbeddings(num_users, args.user_embed_dim)
+
+        p_test_embeding=p_test_embed(num_pois,args.sage_embed_dim)
 
         # %% Model4: Category embedding model
         cat_embed_model = CategoryEmbeddings(num_cats, args.cat_embed_dim)
@@ -318,10 +321,10 @@ def train(args):
                                      dropout=args.transformer_dropout)
 
         # Define overall loss and optimizer
-        optimizer = optim.Adam(params=list(sage_model.parameters()) +
+        optimizer = optim.Adam(params=
                                       list(user_embed_model.parameters()) +
                                       list(cat_embed_model.parameters()) +
-                                      list(seq_model.parameters()),
+                                      list(seq_model.parameters())+list(p_test_embed),
                                lr=args.lr,
                                weight_decay=args.weight_decay)
 
@@ -350,8 +353,8 @@ def train(args):
 
             input_seq_embed = []
             for idx in range(len(input_seq)):
-                poi_embedding = poi_embeddings[embedding_index + idx]
-
+                #poi_embedding = poi_embeddings[embedding_index + idx]
+                poi_embedding=p_test_embed(torch.LongTensor([input_seq[idx]]).to(device=args.device)).squeeze(0)
                 # Categroy to embedding
                 cat_idx = torch.LongTensor([input_seq_cat[idx]]).to(device=args.device)
                 cat_embedding = cat_embed_model(cat_idx)
@@ -366,7 +369,7 @@ def train(args):
             return input_seq_embed
 
         # %% ====================== Train ======================
-        sage_model = sage_model.to(device=args.device)
+        #sage_model = sage_model.to(device=args.device)
         user_embed_model = user_embed_model.to(device=args.device)
         cat_embed_model = cat_embed_model.to(device=args.device)
         seq_model = seq_model.to(device=args.device)
@@ -401,7 +404,9 @@ def train(args):
             user_embed_model.train()
             cat_embed_model.train()
             seq_model.train()
-            sage_model.train()
+            p_test_embeding.train()
+
+            #sage_model.train()
 
             train_batches_top1_acc_list = []
             train_batches_top5_acc_list = []
@@ -427,7 +432,7 @@ def train(args):
                 batch_seq_labels_cat = []
 
                 pois = [each[0] for sample in batch for each in sample[1]]
-                poi_embeddings = sage_model(torch.tensor(pois).to(args.device))
+                #poi_embeddings = sage_model(torch.tensor(pois).to(args.device))
                 # Convert input seq to embeddings
                 embedding_index = 0
                 for sample in batch:
@@ -436,14 +441,14 @@ def train(args):
                     input_seq = [each[0] for each in sample[1]]
                     label_seq = [each[0] for each in sample[2]]
                     label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
-                    input_seq_embed = torch.stack(input_traj_to_embeddings(sample, poi_embeddings, embedding_index))
+                    input_seq_embed = torch.stack(input_traj_to_embeddings(sample, None, embedding_index))
                     batch_seq_embeds.append(input_seq_embed)
                     batch_seq_lens.append(len(input_seq))
                     batch_input_seqs.append(input_seq)
                     batch_seq_labels_poi.append(torch.LongTensor(label_seq))
                     batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
                     embedding_index += len(input_seq)
-                sage_model.reset_buffer()
+                #sage_model.reset_buffer()
 
                 # Pad seqs for batch training
                 batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
@@ -525,7 +530,8 @@ def train(args):
             user_embed_model.eval()
             cat_embed_model.eval()
             seq_model.eval()
-            sage_model.eval()
+            p_test_embeding.eval()
+            #sage_model.eval()
             val_batches_top1_acc_list = []
             val_batches_top5_acc_list = []
             val_batches_top10_acc_list = []
@@ -549,14 +555,14 @@ def train(args):
                 embedding_index = 0
                 # Convert input seq to embeddings
                 pois = [each[0] for sample in batch for each in sample[1]]
-                poi_embeddings = sage_model(torch.tensor(pois).to(args.device))
+                #poi_embeddings = sage_model(torch.tensor(pois).to(args.device))
                 for sample in batch:
                     traj_id = sample[0]
                     input_seq = [each[0] for each in sample[1]]
                     label_seq = [each[0] for each in sample[2]]
 
                     label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
-                    input_seq_embed = torch.stack(input_traj_to_embeddings(sample, poi_embeddings, embedding_index))
+                    input_seq_embed = torch.stack(input_traj_to_embeddings(sample, None, embedding_index))
                     batch_seq_embeds.append(input_seq_embed)
                     batch_seq_lens.append(len(input_seq))
                     batch_input_seqs.append(input_seq)
@@ -564,7 +570,7 @@ def train(args):
 
                     batch_seq_labels_cat.append(torch.LongTensor(label_seq_cats))
                     embedding_index += len(input_seq)
-                sage_model.reset_buffer()
+                #sage_model.reset_buffer()
 
                 # Pad seqs for batch training
                 batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
@@ -747,7 +753,7 @@ def train(args):
         print(traceback.format_exc())
         print(e)
     finally:
-        stop_event.set()
+        #stop_event.set()
 
 if __name__ == '__main__':
     args = parameter_parser()

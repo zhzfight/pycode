@@ -34,6 +34,18 @@ class UserEmbeddings(nn.Module):
         embed = self.user_embedding(user_idx)
         return embed
 
+class p_test_embed(nn.Module):
+    def __init__(self, num_pois, embedding_dim):
+        super(p_test_embed, self).__init__()
+
+        self.user_embedding = nn.Embedding(
+            num_embeddings=num_pois,
+            embedding_dim=embedding_dim,
+        )
+
+    def forward(self, poi_idx):
+        embed = self.user_embedding(poi_idx)
+        return embed
 
 class CategoryEmbeddings(nn.Module):
     def __init__(self, num_cats, embedding_dim):
