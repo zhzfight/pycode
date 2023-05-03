@@ -753,6 +753,7 @@ def train(args):
         print(traceback.format_exc())
         print(e)
     finally:
+        print('end')
         #stop_event.set()
 
 if __name__ == '__main__':
