@@ -315,8 +315,6 @@ class GRUModel(nn.Module):
         ffn_output = self.norm22(x + ffn_output)
 
 
-
-
         out_poi = self.decoder_poi(ffn_output)
         out_time = self.decoder_time(ffn_output)
         out_cat = self.decoder_cat(ffn_output)
