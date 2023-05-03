@@ -324,7 +324,7 @@ def train(args):
         optimizer = optim.Adam(params=
                                       list(user_embed_model.parameters()) +
                                       list(cat_embed_model.parameters()) +
-                                      list(seq_model.parameters())+list(p_test_embed),
+                                      list(seq_model.parameters())+list(p_test_embeding.parameters()),
                                lr=args.lr,
                                weight_decay=args.weight_decay)
 
