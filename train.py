@@ -354,7 +354,7 @@ def train(args):
             input_seq_embed = []
             for idx in range(len(input_seq)):
                 #poi_embedding = poi_embeddings[embedding_index + idx]
-                poi_embedding=p_test_embed(torch.LongTensor([input_seq[idx]]).to(device=args.device)).squeeze(0)
+                poi_embedding=p_test_embeding(torch.LongTensor([input_seq[idx]]).to(device=args.device)).squeeze(0)
                 # Categroy to embedding
                 cat_idx = torch.LongTensor([input_seq_cat[idx]]).to(device=args.device)
                 cat_embedding = cat_embed_model(cat_idx)
