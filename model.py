@@ -199,7 +199,6 @@ class GRUModel(nn.Module):
         # self.encoder = nn.Embedding(num_poi, embed_size)
 
         self.decoder_poi = nn.Linear(nhid, num_poi)
-        self.decoder_time = nn.Linear(nhid, 1)
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
@@ -241,9 +240,11 @@ class GRUModel(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src,batch_seq_lens,batch_input_seqs_ts):
+    def forward(self, src,batch_seq_lens,batch_input_seqs_ts,batch_label_seqs_ts):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
+
+        label_hourInterval=torch.zeros((src.shape[0],src.shape[1]),dtype=torch.long).to(self.device)
 
         for i in range(src.shape[0]):
             for j in range(batch_seq_lens[i]):
@@ -255,9 +256,13 @@ class GRUModel(nn.Module):
                     dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
                     if dayInterval[i][j][k]>6:
                         dayInterval[i][j][k]=7
+            for k in range(batch_seq_lens[i]):
+                label_hourInterval[i][k]=int(((batch_label_seqs_ts[i][k]-batch_input_seqs_ts[i][k])%(self.tu))/1800)+2
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
         dayInterval_embedding=self.day_embedding(dayInterval)
+
+        label_hourInterval_embedding=self.hour_embedding(label_hourInterval)
 
 
         # mask attn
@@ -314,11 +319,11 @@ class GRUModel(nn.Module):
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
 
+        ffn_output=torch.cat((ffn_output,label_hourInterval_embedding),dim=-1)
 
         out_poi = self.decoder_poi(ffn_output)
-        out_time = self.decoder_time(ffn_output)
         out_cat = self.decoder_cat(ffn_output)
-        return out_poi, out_time, out_cat
+        return out_poi, out_cat
 
 
 
