@@ -295,6 +295,9 @@ class GRUModel(nn.Module):
 
         attn_weight=F.softmax(attn_weight,dim=-1)
         x=attn_weight.matmul(V) #B,L,D
+        x+=attn_weight.unsqueeze(1).matmul(hourInterval_embedding)
+        x+=attn_weight.unsqueeze(1).matmul(dayInterval_embedding)
+
 
         x=self.norm11(x+src)
         ffn_output=self.feedforward1(x)
