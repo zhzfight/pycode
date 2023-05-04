@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 
 def build_global_POI_checkin_graph(df, exclude_user=None):
-    G = nx.Graph()
+    G = nx.DiGraph()
     users = list(set(df['user_id'].to_list()))
     if exclude_user in users: users.remove(exclude_user)
     loop = tqdm(users)
