@@ -198,8 +198,8 @@ class GRUModel(nn.Module):
         self.batch_size=batch_size
         # self.encoder = nn.Embedding(num_poi, embed_size)
 
-        self.decoder_poi = nn.Linear(2*nhid, num_poi)
-        self.decoder_cat = nn.Linear(2*nhid, num_cat)
+        self.decoder_poi = nn.Linear(nhid, num_poi)
+        self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
         self.hour_embedding=nn.Embedding(50,nhid,padding_idx=0)
@@ -319,7 +319,7 @@ class GRUModel(nn.Module):
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
 
-        ffn_output=torch.cat((ffn_output,label_hourInterval_embedding),dim=-1)
+        ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
 
         out_poi = self.decoder_poi(ffn_output)
         out_cat = self.decoder_cat(ffn_output)
