@@ -58,19 +58,11 @@ def train(args):
     train_df = pd.read_csv(args.data_train)
     val_df = pd.read_csv(args.data_val)
 
-    def calculate_time_range(group):
-        return group['timestamp'].max() - group['timestamp'].min()
 
-    train_df['timestamp'] = pd.to_datetime(train_df['local_time']).astype('int64') // 10 ** 9
-    result = train_df.groupby('trajectory_id').apply(calculate_time_range)
-    i1=result.max()
-    val_df['timestamp'] = pd.to_datetime(val_df['local_time']).astype('int64') // 10 ** 9
-    result = val_df.groupby('trajectory_id').apply(calculate_time_range)
-    i2=result.max()
-    if i1>i2:
-        tu=i1
-    else:
-        tu=i2
+    if args.data_train!='dataset/dataset_tsmc2014/NYC_train.csv':
+        train_df['timestamp'] = pd.to_datetime(train_df['local_time']).astype('int64') // 10 ** 9
+        val_df['timestamp'] = pd.to_datetime(val_df['local_time']).astype('int64') // 10 ** 9
+
     # Build POI graph (built from train_df)
     print('Loading POI graph...')
     raw_A = load_graph_adj_mtx(args.data_adj_mtx)
