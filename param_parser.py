@@ -34,7 +34,7 @@ def parameter_parser():
                         help='Training data path')
     parser.add_argument('--data-val',
                         type=str,
-                        default='dataset/dataset_tsmc2014/NYC_val.csv',
+                        default='dataset/dataset_tsmc2014/NYC_test.csv',
                         help='Validation data path')
     parser.add_argument('--short-traj-thres',
                         type=int,
