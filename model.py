@@ -202,7 +202,7 @@ class GRUModel(nn.Module):
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
-        self.hour_embedding=nn.Embedding(50,nhid,padding_idx=0)
+        self.hour_embedding=nn.Embedding(8,nhid,padding_idx=0)
 
         self.W1_Q=nn.Linear(nhid,nhid)
         self.W1_K=nn.Linear(nhid,nhid)
@@ -252,7 +252,7 @@ class GRUModel(nn.Module):
                     if i==j:
                         hourInterval[i][j][k]=1
                     else:
-                        hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/1800)+2
+                        hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/14400)+2
                     dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
                     if dayInterval[i][j][k]>6:
                         dayInterval[i][j][k]=7
@@ -336,64 +336,3 @@ class GRUModel(nn.Module):
 
 
 
-class CustomAttention(nn.Module):
-    def __init__(self, embed_dim, dropout=None):
-        super(CustomAttention, self).__init__()
-        self.embed_dim = embed_dim
-        self.dropout = nn.Dropout(dropout)
-        # Define the projection matrices for query, key and value
-        self.q_proj = nn.Linear(embed_dim, embed_dim)
-        self.k_proj = nn.Linear(embed_dim, embed_dim)
-        self.v_proj = nn.Linear(embed_dim, embed_dim)
-        # Define the output projection matrix
-        self.out_proj = nn.Linear(embed_dim, embed_dim)
-
-    def forward(self, query, key, value, attn_mask=None, key_padding_mask=None):
-        # Get the batch size and sequence length
-        bsz, tgt_len, embed_dim = query.size()
-        src_len = key.size(1)
-
-        # Check the dimension of the inputs
-        assert embed_dim == self.embed_dim
-        assert list(query.size()) == [bsz, tgt_len, embed_dim]
-        assert list(key.size()) == [bsz, src_len, embed_dim]
-        assert list(value.size()) == [bsz, src_len, embed_dim]
-
-        # Project the query, key and value
-        q = self.q_proj(query)
-        k = self.k_proj(key)
-        v = self.v_proj(value)
-
-        # Transpose the query and key to compute the attention score
-        q = q.transpose(1, 2) # shape: (bsz, embed_dim, tgt_len)
-        k = k.transpose(1, 2) # shape: (bsz, embed_dim, src_len)
-
-        # Compute the attention score using dot product
-        attn_output_weights = torch.bmm(q, k) # shape: (bsz, tgt_len, src_len)
-
-        # Scale the attention score by 1/sqrt(d)
-        attn_output_weights /= math.sqrt(self.embed_dim)
-
-        # Apply the attention mask if given
-        if attn_mask is not None:
-            assert list(attn_mask.size()) == [tgt_len, src_len]
-            attn_output_weights += attn_mask.unsqueeze(0)
-
-        # Apply the key padding mask if given
-        if key_padding_mask is not None:
-            assert list(key_padding_mask.size()) == [bsz, src_len]
-            attn_output_weights.masked_fill_(key_padding_mask.unsqueeze(1), float('-inf'))
-
-        # Apply softmax to get the attention weights
-        attn_output_weights = F.softmax(attn_output_weights, dim=-1)
-
-        # Apply dropout to the attention weights
-        attn_output_weights = self.dropout(attn_output_weights)
-
-        # Multiply the attention weights with the value
-        attn_output = torch.bmm(attn_output_weights, v) # shape: (bsz, tgt_len, embed_dim)
-
-        # Project the output to the original dimension
-        attn_output = self.out_proj(attn_output)
-
-        return attn_output
