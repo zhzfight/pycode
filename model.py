@@ -243,9 +243,9 @@ class GRUModel(nn.Module):
     def forward(self, src,batch_seq_lens,batch_input_seqs_ts,batch_label_seqs_ts):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-        '''
+
         label_hourInterval=torch.zeros((src.shape[0],src.shape[1]),dtype=torch.long).to(self.device)
-        '''
+
         for i in range(src.shape[0]):
             for j in range(batch_seq_lens[i]):
                 for k in range(j+1):
@@ -256,16 +256,16 @@ class GRUModel(nn.Module):
                     dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
                     if dayInterval[i][j][k]>6:
                         dayInterval[i][j][k]=7
-            '''
+
             for k in range(batch_seq_lens[i]):
                 label_hourInterval[i][k]=int(((batch_label_seqs_ts[i][k]-batch_input_seqs_ts[i][k])%(self.tu))/1800)+2
-            '''
+
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
         dayInterval_embedding=self.day_embedding(dayInterval)
-        '''
+
         label_hourInterval_embedding=self.hour_embedding(label_hourInterval)
-        '''
+
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
@@ -328,8 +328,9 @@ class GRUModel(nn.Module):
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
 
-        #ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
+        
         '''
+        ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         out_poi = self.decoder_poi(ffn_output)
         out_cat = self.decoder_cat(ffn_output)
         return out_poi, out_cat
