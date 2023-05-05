@@ -23,19 +23,19 @@ def parameter_parser():
     # Data
     parser.add_argument('--data-adj-mtx',
                         type=str,
-                        default='dataset/dataset_tsmc2014/graph_A.csv',
+                        default='dataset/NYC/graph_A.csv',
                         help='Graph adjacent path')
     parser.add_argument('--data-node-feats',
                         type=str,
-                        default='dataset/dataset_tsmc2014/graph_X.csv',
+                        default='dataset/NYC/graph_X.csv',
                         help='Graph node features path')
     parser.add_argument('--data-train',
                         type=str,
-                        default='dataset/dataset_tsmc2014/NYC_train.csv',
+                        default='dataset/NYC//NYC_train.csv',
                         help='Training data path')
     parser.add_argument('--data-val',
                         type=str,
-                        default='dataset/dataset_tsmc2014/NYC_test.csv',
+                        default='dataset/NYC/NYC_test.csv',
                         help='Validation data path')
     parser.add_argument('--short-traj-thres',
                         type=int,
