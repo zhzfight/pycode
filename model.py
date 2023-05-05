@@ -302,7 +302,7 @@ class GRUModel(nn.Module):
         x=self.norm11(x+src)
         ffn_output=self.feedforward1(x)
         ffn_output=self.norm12(x+ffn_output)
-
+        '''
         src=ffn_output
 
         Q = self.W2_Q(src)
@@ -329,7 +329,7 @@ class GRUModel(nn.Module):
         ffn_output = self.norm22(x + ffn_output)
 
         #ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
-
+        '''
         out_poi = self.decoder_poi(ffn_output)
         out_cat = self.decoder_cat(ffn_output)
         return out_poi, out_cat
