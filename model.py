@@ -201,8 +201,10 @@ class GRUModel(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
+        self.time_bin=3600*2
+        assert (self.tu)%self.time_bin==0
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
-        self.hour_embedding=nn.Embedding(8,nhid,padding_idx=0)
+        self.hour_embedding=nn.Embedding(int((self.tu)/self.time_bin)+2,nhid,padding_idx=0)
 
         self.W1_Q=nn.Linear(nhid,nhid)
         self.W1_K=nn.Linear(nhid,nhid)
@@ -244,28 +246,33 @@ class GRUModel(nn.Module):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
 
-        label_hourInterval=torch.zeros((src.shape[0],src.shape[1]),dtype=torch.long).to(self.device)
-
+        label_hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
+        label_dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         for i in range(src.shape[0]):
             for j in range(batch_seq_lens[i]):
                 for k in range(j+1):
                     if i==j:
                         hourInterval[i][j][k]=1
                     else:
-                        hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/14400)+2
+                        hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/self.time_bin)+2
                     dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
                     if dayInterval[i][j][k]>6:
                         dayInterval[i][j][k]=7
+                    label_hourInterval[i][j][k] = int(
+                        ((batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu)) / self.time_bin) + 2
+                    label_dayInterval[i][j][k] = int(
+                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu)) + 1
+                    if label_dayInterval[i][j][k] > 6:
+                        label_dayInterval[i][j][k] = 7
 
-            for k in range(batch_seq_lens[i]):
-                label_hourInterval[i][k]=int(((batch_label_seqs_ts[i][k]-batch_input_seqs_ts[i][k])%(self.tu))/1800)+2
+
 
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
         dayInterval_embedding=self.day_embedding(dayInterval)
 
         label_hourInterval_embedding=self.hour_embedding(label_hourInterval)
-
+        label_dayInterval_embedding=self.day_embedding(label_dayInterval)
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
@@ -328,12 +335,25 @@ class GRUModel(nn.Module):
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
 
-        
         '''
+        #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
+        ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
-        out_poi = self.decoder_poi(ffn_output)
-        out_cat = self.decoder_cat(ffn_output)
-        return out_poi, out_cat
+        ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
+        '''
+        paddings = torch.ones(ffn_output.shape) * (-2 ** 32 + 1)
+        paddings = paddings.to(self.device)
+        ffn_output = torch.where(attn_mask, paddings, ffn_output)
+        '''
+        decoder_output_poi = self.decoder_poi(ffn_output)
+        decoder_output_cat = self.decoder_cat(ffn_output)
+        pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3])
+        pooled_cat=torch.zeros(decoder_output_cat.shape[0],decoder_output_cat.shape[1],decoder_output_cat.shape[3])
+        for i in range(decoder_output_poi.shape[1]):
+            pooled_poi[:,i]=torch.max(decoder_output_poi[:,i,:i+1],dim=1).values
+            pooled_cat[:,i]=torch.max(decoder_output_cat[:,i,:i+1],dim=1).values
+
+        return pooled_poi,pooled_cat
 
 
 
