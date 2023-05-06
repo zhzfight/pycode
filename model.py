@@ -304,11 +304,12 @@ class GRUModel(nn.Module):
         x=attn_weight.matmul(V) #B,L,D
         x+=torch.matmul(attn_weight.unsqueeze(2),hourInterval_embedding).squeeze(2)
         x+=torch.matmul(attn_weight.unsqueeze(2),dayInterval_embedding).squeeze(2)
-
+        del Q,K,V
 
         x=self.norm11(x+src)
         ffn_output=self.feedforward1(x)
         ffn_output=self.norm12(x+ffn_output)
+        del x
         '''
         src=ffn_output
 
@@ -347,6 +348,7 @@ class GRUModel(nn.Module):
         '''
         decoder_output_poi = self.decoder_poi(ffn_output)
         decoder_output_cat = self.decoder_cat(ffn_output)
+        del ffn_output
         pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3]).to(self.device)
         pooled_cat=torch.zeros(decoder_output_cat.shape[0],decoder_output_cat.shape[1],decoder_output_cat.shape[3]).to(self.device)
         for i in range(decoder_output_poi.shape[1]):
