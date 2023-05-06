@@ -347,8 +347,8 @@ class GRUModel(nn.Module):
         '''
         decoder_output_poi = self.decoder_poi(ffn_output)
         decoder_output_cat = self.decoder_cat(ffn_output)
-        pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3])
-        pooled_cat=torch.zeros(decoder_output_cat.shape[0],decoder_output_cat.shape[1],decoder_output_cat.shape[3])
+        pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3]).to(self.device)
+        pooled_cat=torch.zeros(decoder_output_cat.shape[0],decoder_output_cat.shape[1],decoder_output_cat.shape[3]).to(self.device)
         for i in range(decoder_output_poi.shape[1]):
             pooled_poi[:,i]=torch.max(decoder_output_poi[:,i,:i+1],dim=1).values
             pooled_cat[:,i]=torch.max(decoder_output_cat[:,i,:i+1],dim=1).values
