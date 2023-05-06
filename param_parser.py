@@ -96,7 +96,7 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=20,
+                        default=10,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
