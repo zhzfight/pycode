@@ -201,7 +201,7 @@ class GRUModel(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
-        self.time_bin=3600
+        self.time_bin=1800
         assert (self.tu)%self.time_bin==0
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
         self.hour_embedding=nn.Embedding(int((self.tu)/self.time_bin)+2,nhid,padding_idx=0)
