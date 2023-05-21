@@ -201,7 +201,7 @@ class GRUModel(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
         self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
-        self.time_bin=1800
+        self.time_bin=3600
         assert (self.tu)%self.time_bin==0
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
         self.hour_embedding=nn.Embedding(int((self.tu)/self.time_bin)+2,nhid,padding_idx=0)
@@ -310,7 +310,7 @@ class GRUModel(nn.Module):
         ffn_output=self.feedforward1(x)
         ffn_output=self.norm12(x+ffn_output)
 
-        '''
+
         src=ffn_output
 
         Q = self.W2_Q(src)
@@ -336,7 +336,7 @@ class GRUModel(nn.Module):
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
 
-        '''
+
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
