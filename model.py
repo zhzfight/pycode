@@ -203,6 +203,7 @@ class GRUModel(nn.Module):
         self.tu=24*3600
         self.time_bin=3600
         assert (self.tu)%self.time_bin==0
+        self.week_embedding=nn.Embedding(6,nhid,padding_idx=0)
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
         self.hour_embedding=nn.Embedding(int((self.tu)/self.time_bin)+2,nhid,padding_idx=0)
 
@@ -245,9 +246,11 @@ class GRUModel(nn.Module):
     def forward(self, src,batch_seq_lens,batch_input_seqs_ts,batch_label_seqs_ts):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
+        weekInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
 
         label_hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         label_dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
+        label_weekInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         for i in range(src.shape[0]):
             for j in range(batch_seq_lens[i]):
                 for k in range(j+1):
@@ -255,24 +258,28 @@ class GRUModel(nn.Module):
                         hourInterval[i][j][k]=1
                     else:
                         hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/self.time_bin)+2
-                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
-                    if dayInterval[i][j][k]>6:
-                        dayInterval[i][j][k]=7
+                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))%7+1
+                    weekInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu*7))+1
+                    if dayInterval[i][j][k]>4:
+                        dayInterval[i][j][k]=5
                     label_hourInterval[i][j][k] = int(
                         ((batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu)) / self.time_bin) + 2
                     label_dayInterval[i][j][k] = int(
-                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu)) + 1
-                    if label_dayInterval[i][j][k] > 6:
-                        label_dayInterval[i][j][k] = 7
+                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu))%7 + 1
+                    label_weekInterval[i][j][k]=int((batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu*7))+1
+                    if label_weekInterval[i][j][k] > 4:
+                        label_weekInterval[i][j][k] = 5
 
 
 
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
         dayInterval_embedding=self.day_embedding(dayInterval)
+        weekInterval_embedding=self.week_embedding(weekInterval)
 
         label_hourInterval_embedding=self.hour_embedding(label_hourInterval)
         label_dayInterval_embedding=self.day_embedding(label_dayInterval)
+        label_weekInterval_embedding=self.week_embedding(label_weekInterval)
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
@@ -290,6 +297,7 @@ class GRUModel(nn.Module):
         attn_weight=Q.matmul(torch.transpose(K,1,2))
         attn_weight+=hourInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
         attn_weight+=dayInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        attn_weight+=weekInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
 
         attn_weight=attn_weight/math.sqrt(self.nhid)
 
@@ -309,7 +317,7 @@ class GRUModel(nn.Module):
         x=self.norm11(x+src)
         ffn_output=self.feedforward1(x)
         ffn_output=self.norm12(x+ffn_output)
-        '''
+
 
         src=ffn_output
 
@@ -320,6 +328,7 @@ class GRUModel(nn.Module):
         attn_weight = Q.matmul(torch.transpose(K, 1, 2))
         attn_weight += hourInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
         attn_weight += dayInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        attn_weight += weekInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
         attn_weight = attn_weight / math.sqrt(self.nhid)
         paddings = torch.ones(attn_weight.shape) * (-2 ** 32 + 1)
         paddings = paddings.to(self.device)
@@ -335,12 +344,13 @@ class GRUModel(nn.Module):
         x = self.norm21(x + src)
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
-        '''
+
 
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
+        ffn_output=torch.add(ffn_output,label_weekInterval_embedding)
         '''
         paddings = torch.ones(ffn_output.shape) * (-2 ** 32 + 1)
         paddings = paddings.to(self.device)
