@@ -401,8 +401,6 @@ def train(args):
                 input_seq_ts=[each[2] for each in sample[1]]
                 label_seq = [each[0] for each in sample[2]]
                 label_seq_ts=[each[2] for each in sample[2]]
-                input_seq_time = [each[1] for each in sample[1]]
-                label_seq_cats = [poi_idx2cat_idx_dict[each] for each in label_seq]
                 input_seq_embed = torch.stack(input_traj_to_embeddings(sample, poi_embeddings))
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(input_seq))

@@ -53,11 +53,11 @@ def parameter_parser():
     # Model hyper-parameters
     parser.add_argument('--poi-embed-dim',
                         type=int,
-                        default=128,
+                        default=96,
                         help='POI embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
-                        default=128,
+                        default=96,
                         help='User embedding dimensions')
     parser.add_argument('--gru-dropout',
                         type=float,
@@ -71,27 +71,17 @@ def parameter_parser():
                         type=list,
                         default=[32, 64],
                         help='List of hidden dims for gcn layers')
-    parser.add_argument('--seqmodel-nhid',
-                        type=int,
-                        default=512,
-                        help='Hid dim in TransformerEncoder')
+
 
     parser.add_argument('--time-embed-dim',
                         type=int,
-                        default=32,
+                        default=24,
                         help='Time embedding dimensions')
     parser.add_argument('--cat-embed-dim',
                         type=int,
                         default=32,
                         help='Category embedding dimensions')
-    parser.add_argument('--time-loss-weight',
-                        type=int,
-                        default=10,
-                        help='Scale factor for the time loss term')
-    parser.add_argument('--node-attn-nhid',
-                        type=int,
-                        default=128,
-                        help='Node attn map hidden dimensions')
+
 
     # Training hyper-parameters
     parser.add_argument('--batch',
