@@ -57,7 +57,7 @@ def parameter_parser():
                         help='POI embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
-                        default=96,
+                        default=64,
                         help='User embedding dimensions')
     parser.add_argument('--gru-dropout',
                         type=float,
@@ -79,7 +79,7 @@ def parameter_parser():
                         help='Time embedding dimensions')
     parser.add_argument('--cat-embed-dim',
                         type=int,
-                        default=32,
+                        default=24,
                         help='Category embedding dimensions')
 
 
