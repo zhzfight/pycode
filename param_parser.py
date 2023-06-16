@@ -53,11 +53,11 @@ def parameter_parser():
     # Model hyper-parameters
     parser.add_argument('--poi-embed-dim',
                         type=int,
-                        default=128,
+                        default=100,
                         help='POI embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
-                        default=128,
+                        default=100,
                         help='User embedding dimensions')
     parser.add_argument('--gru-dropout',
                         type=float,
@@ -96,11 +96,11 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=5,
+                        default=20,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
-                        default=200,
+                        default=40,
                         help='Number of epochs to train.')
     parser.add_argument('--lr',
                         type=float,
