@@ -288,9 +288,15 @@ class GRUModel(nn.Module):
         K=self.W1_K(src)
         V=self.W1_V(src)
 
-        attn_weight=Q.matmul(torch.transpose(K,1,2))
-        attn_weight+=hourInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
-        attn_weight+=dayInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
+
+        attn_weight=torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
+        Q=Q.unsqueeze(2).repeat(1,1,src.shape[1],1)
+        Q=torch.add(Q,hourInterval_embedding)
+        Q=torch.add(Q,dayInterval_embedding)
+        K=K.unsqueeze(2).repeat(1,1,src.shape[1],1).transpose(2,1)
+        for i in range(src.shape[1]):
+            attn_weight[:, i, :i + 1] = F.softmax(
+                torch.sum(Q[:, i, :i + 1] * K[:, i,:i + 1], dim=-1), dim=-1)
 
         attn_weight=attn_weight/math.sqrt(self.nhid)
 
