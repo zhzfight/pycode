@@ -199,7 +199,6 @@ class GRUModel(nn.Module):
         # self.encoder = nn.Embedding(num_poi, embed_size)
 
         self.decoder_poi = nn.Linear(nhid, num_poi)
-        self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
         self.time_bin=3600
         assert (self.tu)%self.time_bin==0
@@ -231,9 +230,10 @@ class GRUModel(nn.Module):
         self.norm22 = nn.LayerNorm(nhid)
 
 
-
         self.init_weights()
-
+        self.white_board = nn.Parameter(torch.FloatTensor(nhid))
+        self.decoder = nn.Linear(nhid, num_poi)
+        self.proj = nn.Linear(nhid, nhid)
 
 
 
@@ -347,17 +347,12 @@ class GRUModel(nn.Module):
         ffn_output = torch.where(attn_mask, paddings, ffn_output)
         '''
         decoder_output_poi = self.decoder_poi(ffn_output)
-        decoder_output_cat = self.decoder_cat(ffn_output)
-        decoder_output_poi=torch.sigmoid(decoder_output_poi)
-        decoder_output_cat=torch.sigmoid(decoder_output_cat)
 
         pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3]).to(self.device)
-        pooled_cat=torch.zeros(decoder_output_cat.shape[0],decoder_output_cat.shape[1],decoder_output_cat.shape[3]).to(self.device)
         for i in range(decoder_output_poi.shape[1]):
             pooled_poi[:,i]=torch.mean(decoder_output_poi[:,i,:i+1],dim=1)
-            pooled_cat[:,i]=torch.mean(decoder_output_cat[:,i,:i+1],dim=1)
 
-        return pooled_poi,pooled_cat
+        return pooled_poi
 
 
 
