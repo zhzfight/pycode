@@ -235,7 +235,10 @@ class GRUModel(nn.Module):
         self.decoder = nn.Linear(nhid, num_poi)
         self.proj = nn.Linear(nhid, nhid)
         self.u_proj=nn.Linear(user_dim,nhid)
-
+        self.st_h=nn.Linear(nhid,nhid)
+        self.ut_h=nn.Linear(nhid,nhid)
+        self.st_d=nn.Linear(nhid,nhid)
+        self.ut_d=nn.Linear(nhid,nhid)
 
 
     def init_weights(self):
@@ -271,9 +274,15 @@ class GRUModel(nn.Module):
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
         dayInterval_embedding=self.day_embedding(dayInterval)
+        hourInterval_embedding=self.st_h(hourInterval_embedding)
+        dayInterval_embedding=self.st_d(dayInterval_embedding)
+
 
         label_hourInterval_embedding=self.hour_embedding(label_hourInterval)
         label_dayInterval_embedding=self.day_embedding(label_dayInterval)
+        label_hourInterval_embedding=self.ut_h(label_hourInterval_embedding)
+        label_dayInterval_embedding=self.ut_d(label_dayInterval_embedding)
+
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
