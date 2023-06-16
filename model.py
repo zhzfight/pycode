@@ -340,8 +340,6 @@ class GRUModel(nn.Module):
 
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
-        ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
-        ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
         '''
         
         decoder_output_poi = self.decoder_poi(ffn_output)
@@ -352,11 +350,13 @@ class GRUModel(nn.Module):
         '''
         ffn_output = self.proj(ffn_output)
         batch_user_embedding=self.u_proj(batch_user_embedding)
-        batch_user_embedding=batch_user_embedding.unsqueeze(1).repeat(1,src.shape[1],1)
+        batch_user_embedding=batch_user_embedding.unsqueeze(1).repeat(1,src.shape[1],1).unsqueeze(2).repeat(1,1,src.shape[1],1)
+        batch_user_embedding=torch.add(batch_user_embedding,label_hourInterval_embedding)
+        batch_user_embedding=torch.add(batch_user_embedding,label_dayInterval_embedding)
         attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
         for i in range(src.shape[1]):
             attention_weights[:, i, :i + 1] = F.softmax(
-                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, :i + 1], dim=-1), dim=-1)
+                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, i,:i + 1], dim=-1), dim=-1)
 
         # 根据注意力权重对偏好矩阵进行聚合
         aggregated_preference = torch.sum(ffn_output * attention_weights.unsqueeze(-1), dim=2)
