@@ -189,7 +189,7 @@ class Time2Vec(nn.Module):
 
 
 class GRUModel(nn.Module):
-    def __init__(self, num_poi, num_cat, nhid,batch_size, device,dropout):
+    def __init__(self, num_poi, num_cat, nhid,batch_size, device,dropout,user_dim):
         super(GRUModel, self).__init__()
 
 
@@ -234,6 +234,7 @@ class GRUModel(nn.Module):
         self.white_board = nn.Parameter(torch.FloatTensor(nhid))
         self.decoder = nn.Linear(nhid, num_poi)
         self.proj = nn.Linear(nhid, nhid)
+        self.u_proj=nn.Linear(user_dim,nhid)
 
 
 
@@ -242,7 +243,7 @@ class GRUModel(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src,batch_seq_lens,batch_input_seqs_ts,batch_label_seqs_ts):
+    def forward(self, src,batch_seq_lens,batch_input_seqs_ts,batch_label_seqs_ts,batch_user_embedding):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
 
@@ -350,11 +351,12 @@ class GRUModel(nn.Module):
             pooled_poi[:,i]=torch.mean(decoder_output_poi[:,i,:i+1],dim=1)
         '''
         ffn_output = self.proj(ffn_output)
-        white_boards = self.white_board.repeat(src.shape[0], src.shape[1], 1)
+        batch_user_embedding=self.u_proj(batch_user_embedding)
+        batch_user_embedding=batch_user_embedding.unsqueeze(1).repeat(1,src.shape[1],1)
         attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
         for i in range(src.shape[1]):
             attention_weights[:, i, :i + 1] = F.softmax(
-                torch.sum(ffn_output[:, i, :i + 1] * white_boards[:, :i + 1], dim=-1), dim=-1)
+                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, :i + 1], dim=-1), dim=-1)
 
         # 根据注意力权重对偏好矩阵进行聚合
         aggregated_preference = torch.sum(ffn_output * attention_weights.unsqueeze(-1), dim=2)
