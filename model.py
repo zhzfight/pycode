@@ -351,9 +351,8 @@ class GRUModel(nn.Module):
         '''
         ffn_output = self.proj(ffn_output)
         white_boards = self.white_board.repeat(src.shape[0], src.shape[1], 1)
-        attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1])
+        attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
         for i in range(src.shape[1]):
-            print(ffn_output[:, i, :i + 1].shape, white_boards[:, :i + 1].shape)
             attention_weights[:, i, :i + 1] = F.softmax(
                 torch.sum(ffn_output[:, i, :i + 1] * white_boards[:, :i + 1], dim=-1), dim=-1)
 
