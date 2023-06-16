@@ -294,11 +294,11 @@ class GRUModel(nn.Module):
         Q=torch.add(Q,hourInterval_embedding)
         Q=torch.add(Q,dayInterval_embedding)
         K=K.unsqueeze(2).repeat(1,1,src.shape[1],1).transpose(2,1)
+        scalr=math.sqrt(self.nhid)
         for i in range(src.shape[1]):
             attn_weight[:, i, :i + 1] = F.softmax(
-                torch.sum(Q[:, i, :i + 1] * K[:, i,:i + 1], dim=-1), dim=-1)
+                torch.sum(Q[:, i, :i + 1] * K[:, i,:i + 1], dim=-1)/scalr, dim=-1)
 
-        attn_weight=attn_weight/math.sqrt(self.nhid)
 
 
         x=attn_weight.matmul(V) #B,L,D
@@ -355,7 +355,7 @@ class GRUModel(nn.Module):
         attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
         for i in range(src.shape[1]):
             attention_weights[:, i, :i + 1] = F.softmax(
-                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, i,:i + 1], dim=-1), dim=-1)
+                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, i,:i + 1], dim=-1)/scalr, dim=-1)
 
         # 根据注意力权重对偏好矩阵进行聚合
         aggregated_preference = torch.sum(ffn_output * attention_weights.unsqueeze(-1), dim=2)
