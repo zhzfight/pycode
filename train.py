@@ -454,7 +454,7 @@ def train(args):
             train_batches_poi_loss_list.append(loss_poi.detach().cpu().numpy())
 
             # Report training progress
-            if (b_idx % (1000)) == 0:
+            if (b_idx % (100)) == 0:
                 sample_idx = 0
                 batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                 logging.info(f'Epoch:{epoch}, batch:{b_idx}, '
