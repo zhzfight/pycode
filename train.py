@@ -18,7 +18,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from dataloader import load_graph_adj_mtx, load_graph_node_features
-from model import GCN, NodeAttnMap, UserEmbeddings, Time2Vec, CategoryEmbeddings, FuseEmbeddings, GRUModel
+from model import  UserEmbeddings, Time2Vec, CategoryEmbeddings, FuseEmbeddings, GRUModel,PoiEmbeddings
 from param_parser import parameter_parser
 from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_last_timestep, \
     mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss
@@ -90,13 +90,8 @@ def train(args):
     X[:, num_cats + 1:] = raw_X[:, 2:]
     logging.info(f"After one hot encoding poi cat, X.shape: {X.shape}")
     logging.info(f'POI categories: {list(one_hot_encoder.categories_[0])}')
-    # Save ont-hot encoder
-    with open(os.path.join(args.save_dir, 'one-hot-encoder.pkl'), "wb") as f:
-        pickle.dump(one_hot_encoder, f)
 
-    # Normalization
-    print('Laplician matrix...')
-    A = calculate_laplacian_matrix(raw_A, mat_type='hat_rw_normd_lap_mat')
+
 
     # POI id to index
     nodes_df = pd.read_csv(args.data_node_feats)
@@ -235,18 +230,9 @@ def train(args):
                             collate_fn=lambda x: x)
 
     # %% ====================== Build Models ======================
-    # Model1: POI embedding model
-    if isinstance(X, np.ndarray):
-        X = torch.from_numpy(X)
-        A = torch.from_numpy(A)
-    X = X.to(device=args.device, dtype=torch.float)
-    A = A.to(device=args.device, dtype=torch.float)
 
-    args.gcn_nfeat = X.shape[1]
-    poi_embed_model = GCN(ninput=args.gcn_nfeat,
-                          nhid=args.gcn_nhid,
-                          noutput=args.poi_embed_dim,
-                          dropout=args.gcn_dropout)
+
+    poi_embed_model = PoiEmbeddings(num_pois,args.poi_embed_dim)
 
     # %% Model2: User embedding model, nn.embedding
     num_users = len(user_id2idx_dict)
@@ -390,7 +376,7 @@ def train(args):
             batch_seq_embeds = []
             batch_seq_labels_poi = []
 
-            poi_embeddings = poi_embed_model(X, A)
+            poi_embeddings = poi_embed_model(torch.LongTensor([i for i in range(num_pois)]).to(args.device))
 
             # Convert input seq to embeddings
             for sample in batch:
@@ -456,7 +442,6 @@ def train(args):
             # Report training progress
             if (b_idx % (1000)) == 0:
                 sample_idx = 0
-                batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                 logging.info(f'Epoch:{epoch}, batch:{b_idx}, '
                              f'train_batch_loss:{loss.item():.2f}, '
                              f'train_batch_top1_acc:{top1_acc / len(batch_label_pois):.2f}, '
@@ -471,7 +456,6 @@ def train(args):
                              f'traj_id:{batch[sample_idx][0]}\n'
                              f'input_seq: {batch[sample_idx][1]}\n'
                              f'label_seq:{batch[sample_idx][2]}\n'
-                             f'pred_seq_poi_wo_attn:{list(np.argmax(batch_pred_pois_wo_attn, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
                              f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n' +
                              '=' * 100)
 
@@ -503,7 +487,7 @@ def train(args):
             batch_seq_embeds = []
             batch_seq_labels_poi = []
 
-            poi_embeddings = poi_embed_model(X, A)
+            poi_embeddings = poi_embed_model(torch.LongTensor([i for i in range(num_pois)]).to(args.device))
 
             # Convert input seq to embeddings
             for sample in batch:
@@ -564,7 +548,6 @@ def train(args):
             # Report validation progress
             if (vb_idx % (200)) == 0:
                 sample_idx = 0
-                batch_pred_pois_wo_attn = y_pred_poi.detach().cpu().numpy()
                 logging.info(f'Epoch:{epoch}, batch:{vb_idx}, '
                              f'val_batch_loss:{loss.item():.2f}, '
                              f'val_batch_top1_acc:{top1_acc / len(batch_label_pois):.2f}, '
@@ -579,7 +562,6 @@ def train(args):
                              f'traj_id:{batch[sample_idx][0]}\n'
                              f'input_seq:{batch[sample_idx][1]}\n'
                              f'label_seq:{batch[sample_idx][2]}\n'
-                             f'pred_seq_poi_wo_attn:{list(np.argmax(batch_pred_pois_wo_attn, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n'
                              f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n' +
                              '=' * 100)
         # valid end --------------------------------------------------------------------------------------------------------
