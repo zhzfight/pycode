@@ -354,7 +354,7 @@ class GRUModel(nn.Module):
         for i in range(decoder_output_poi.shape[1]):
             pooled_poi[:,i]=torch.mean(decoder_output_poi[:,i,:i+1],dim=1)
         '''
-        batch_user_embedding = self.u_proj(batch_user_embedding)
+        batch_user_embedding = self.u_proj(batch_user_embedding).unsqueeze(1).repeat(1,src.shape[1],1)
         attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
         for i in range(src.shape[1]):
             attention_weights[:, i, :i + 1] = F.softmax(
