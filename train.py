@@ -264,7 +264,7 @@ def train(args):
     embed_fuse_model2 = FuseEmbeddings(args.time_embed_dim, args.cat_embed_dim)
 
     # %% Model6: Sequence model
-    args.seq_input_embed = args.poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim
+    args.seq_input_embed = args.poi_embed_dim  + args.time_embed_dim + args.cat_embed_dim
     seq_model = GRUModel(num_poi=num_pois,
                          num_cat=num_cats,
                          nhid=args.seq_input_embed,
@@ -297,13 +297,6 @@ def train(args):
         input_seq_time = [each[1] for each in sample[1]]
         input_seq_cat = [poi_idx2cat_idx_dict[each] for each in input_seq]
 
-        # User to embedding
-        user_id = traj_id.split('_')[0]
-        user_idx = user_id2idx_dict[user_id]
-        input = torch.LongTensor([user_idx]).to(device=args.device)
-        user_embedding = user_embed_model(input)
-        user_embedding = torch.squeeze(user_embedding)
-
         # POI to embedding and fuse embeddings
         input_seq_embed = []
         for idx in range(len(input_seq)):
@@ -320,12 +313,8 @@ def train(args):
             cat_embedding = cat_embed_model(cat_idx)
             cat_embedding = torch.squeeze(cat_embedding)
 
-            # Fuse user+poi embeds
-            fused_embedding1 = embed_fuse_model1(user_embedding, poi_embedding)
-            fused_embedding2 = embed_fuse_model2(time_embedding, cat_embedding)
 
-            # Concat time, cat after user+poi
-            concat_embedding = torch.cat((fused_embedding1, fused_embedding2), dim=-1)
+            concat_embedding = torch.cat((poi_embedding,time_embedding,cat_embedding), dim=-1)
 
             # Save final embed
             input_seq_embed.append(concat_embedding)
