@@ -66,8 +66,8 @@ class GraphConvolution(nn.Module):
 
     def __repr__(self):
         return self.__class__.__name__ + ' (' \
-               + str(self.in_features) + ' -> ' \
-               + str(self.out_features) + ')'
+            + str(self.in_features) + ' -> ' \
+            + str(self.out_features) + ')'
 
 
 class GCN(nn.Module):
@@ -185,30 +185,26 @@ class Time2Vec(nn.Module):
         return x
 
 
-
-
-
 class GRUModel(nn.Module):
-    def __init__(self, num_poi, num_cat, nhid,batch_size, device,dropout,user_dim):
+    def __init__(self, num_poi, num_cat, nhid, batch_size, device, dropout, user_dim):
         super(GRUModel, self).__init__()
 
-
-        self.device=device
-        self.nhid=nhid
-        self.batch_size=batch_size
+        self.device = device
+        self.nhid = nhid
+        self.batch_size = batch_size
         # self.encoder = nn.Embedding(num_poi, embed_size)
 
         self.decoder_poi = nn.Linear(nhid, num_poi)
-        self.tu=24*3600
-        self.time_bin=3600
-        assert (self.tu)%self.time_bin==0
-        self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
-        self.hour_embedding=nn.Embedding(int((self.tu)/self.time_bin)+2,nhid,padding_idx=0)
+        self.tu = 24 * 3600
+        self.time_bin = 3600
+        assert (self.tu) % self.time_bin == 0
+        self.day_embedding = nn.Embedding(8, nhid, padding_idx=0)
+        self.hour_embedding = nn.Embedding(int((self.tu) / self.time_bin) + 2, nhid, padding_idx=0)
 
-        self.W1_Q=nn.Linear(nhid,nhid)
-        self.W1_K=nn.Linear(nhid,nhid)
-        self.W1_V=nn.Linear(nhid,nhid)
-        self.norm11=nn.LayerNorm(nhid)
+        self.W1_Q = nn.Linear(nhid, nhid)
+        self.W1_K = nn.Linear(nhid, nhid)
+        self.W1_V = nn.Linear(nhid, nhid)
+        self.norm11 = nn.LayerNorm(nhid)
         self.feedforward1 = nn.Sequential(
             nn.Linear(nhid, nhid),
             nn.ReLU(),
@@ -217,10 +213,10 @@ class GRUModel(nn.Module):
         )
         self.norm12 = nn.LayerNorm(nhid)
 
-        self.W2_Q=nn.Linear(nhid,nhid)
-        self.W2_K=nn.Linear(nhid,nhid)
+        self.W2_Q = nn.Linear(nhid, nhid)
+        self.W2_K = nn.Linear(nhid, nhid)
         self.W2_V = nn.Linear(nhid, nhid)
-        self.norm21=nn.LayerNorm(nhid)
+        self.norm21 = nn.LayerNorm(nhid)
         self.feedforward2 = nn.Sequential(
             nn.Linear(nhid, nhid),
             nn.ReLU(),
@@ -229,60 +225,58 @@ class GRUModel(nn.Module):
         )
         self.norm22 = nn.LayerNorm(nhid)
 
-
         self.init_weights()
         self.white_board = nn.Parameter(torch.FloatTensor(nhid))
         self.decoder = nn.Linear(nhid, num_poi)
-        self.proj = nn.Linear(nhid, nhid)
-        self.u_proj=nn.Linear(user_dim,nhid)
-        self.st_h=nn.Linear(nhid,nhid)
-        self.ut_h=nn.Linear(nhid,nhid)
-        self.st_d=nn.Linear(nhid,nhid)
-        self.ut_d=nn.Linear(nhid,nhid)
-
+        self.u_proj = nn.Linear(user_dim, nhid)
+        self.emb_tu = nn.Embedding(2, nhid, padding_idx=0)
+        self.emb_tl = nn.Embedding(2, nhid, padding_idx=0)
 
     def init_weights(self):
         initrange = 0.1
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src,batch_seq_lens,batch_input_seqs_ts,batch_label_seqs_ts,batch_user_embedding):
-        hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-        dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
+    def forward(self, src, batch_seq_lens, batch_input_seqs_ts, batch_label_seqs_ts, batch_user_embedding):
+        hourInterval = torch.zeros((src.shape[0], src.shape[1], src.shape[1]), dtype=torch.long).to(self.device)
+        dayInterval = torch.zeros((src.shape[0], src.shape[1], src.shape[1]), dtype=torch.long).to(self.device)
+        longInterval = torch.zeros((src.shape[0], src.shape[1], src.shape[1]), dtype=torch.long).to(self.device)
+        label_hourInterval = torch.zeros((src.shape[0], src.shape[1], src.shape[1]), dtype=torch.long).to(self.device)
+        label_dayInterval = torch.zeros((src.shape[0], src.shape[1], src.shape[1]), dtype=torch.long).to(self.device)
+        label_longInterval = torch.zeros((src.shape[0], src.shape[1], src.shape[1]), dtype=torch.long).to(self.device)
+        mask = torch.zeros_like(longInterval)
 
-        label_hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-        label_dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         for i in range(src.shape[0]):
             for j in range(batch_seq_lens[i]):
-                for k in range(j+1):
-                    if i==j:
-                        hourInterval[i][j][k]=1
+                for k in range(j + 1):
+                    mask[i][j][k] = 1
+                    if i == j:
+                        hourInterval[i][j][k] = 1
                     else:
-                        hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/self.time_bin)+2
-                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
-                    if dayInterval[i][j][k]>6:
-                        dayInterval[i][j][k]=7
+                        hourInterval[i][j][k] = int(
+                            ((batch_input_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu)) / self.time_bin) + 2
+                    dayInterval[i][j][k] = (int((batch_input_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (
+                        self.tu))) % 7 + 1
+                    longInterval[i][j][k] = (batch_input_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu * 30)
                     label_hourInterval[i][j][k] = int(
                         ((batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu)) / self.time_bin) + 2
-                    label_dayInterval[i][j][k] = int(
-                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu)) + 1
-                    if label_dayInterval[i][j][k] > 6:
-                        label_dayInterval[i][j][k] = 7
+                    label_dayInterval[i][j][k] = (int(
+                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu))) % 7 + 1
+                    label_longInterval[i][j][k] = (batch_input_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu * 30)
 
+        etl, etu = self.emb_tl(mask), self.emb_tu(mask)
+        vtl, vtu = (longInterval).unsqueeze(-1).expand(-1, -1, -1, self.nhid), \
+            (self.tu * 30 - longInterval).unsqueeze(-1).expand(-1, -1, -1, self.nhid)
+        longInterval_embedding = (etl * vtu + etu * vtl) / (self.tu * 30)
+        hourInterval_embedding = self.hour_embedding(hourInterval)
+        dayInterval_embedding = self.day_embedding(dayInterval)
 
+        label_vtl, label_vtu = (label_longInterval).unsqueeze(-1).expand(-1, -1, -1, self.nhid), \
+            (self.tu * 30 - label_longInterval).unsqueeze(-1).expand(-1, -1, -1, self.nhid)
+        label_hourInterval_embedding = self.hour_embedding(label_hourInterval)
+        label_dayInterval_embedding = self.day_embedding(label_dayInterval)
 
-
-        hourInterval_embedding=self.hour_embedding(hourInterval)
-        dayInterval_embedding=self.day_embedding(dayInterval)
-        hourInterval_embedding=self.st_h(hourInterval_embedding)
-        dayInterval_embedding=self.st_d(dayInterval_embedding)
-
-
-        label_hourInterval_embedding=self.hour_embedding(label_hourInterval)
-        label_dayInterval_embedding=self.day_embedding(label_dayInterval)
-        label_hourInterval_embedding=self.ut_h(label_hourInterval_embedding)
-        label_dayInterval_embedding=self.ut_d(label_dayInterval_embedding)
-
+        label_longInterval_embedding = (etl * label_vtu + etu * label_vtl) / (self.tu * 30)
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
@@ -293,31 +287,32 @@ class GRUModel(nn.Module):
         attn_mask = attn_mask.unsqueeze(0).expand(src.shape[0], -1, -1)
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, src.shape[1])
 
-        Q=self.W1_Q(src)
-        K=self.W1_K(src)
-        V=self.W1_V(src)
+        Q = self.W1_Q(src)
+        K = self.W1_K(src)
+        V = self.W1_V(src)
 
+        attn_weight = Q.matmul(torch.transpose(K, 1, 2))
+        attn_weight += hourInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        attn_weight += dayInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        attn_weight += longInterval_embedding.matmul(Q.unsqueeze(-1)).squeeze(-1)
 
-        attn_weight=torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
-        Q=Q.unsqueeze(2).repeat(1,1,src.shape[1],1)
-        Q=torch.add(Q,hourInterval_embedding)
-        Q=torch.add(Q,dayInterval_embedding)
-        K=K.unsqueeze(2).repeat(1,1,src.shape[1],1).transpose(2,1)
-        scalr=math.sqrt(self.nhid)
-        for i in range(src.shape[1]):
-            attn_weight[:, i, :i + 1] = F.softmax(
-                torch.sum(Q[:, i, :i + 1] * K[:, i,:i + 1], dim=-1)/scalr, dim=-1)
+        attn_weight = attn_weight / math.sqrt(self.nhid)
 
+        paddings = torch.ones(attn_weight.shape) * (-2 ** 32 + 1)
+        paddings = paddings.to(self.device)
 
+        attn_weight = torch.where(time_mask, paddings, attn_weight)
+        attn_weight = torch.where(attn_mask, paddings, attn_weight)
 
-        x=attn_weight.matmul(V) #B,L,D
-        x+=torch.matmul(attn_weight.unsqueeze(2),hourInterval_embedding).squeeze(2)
-        x+=torch.matmul(attn_weight.unsqueeze(2),dayInterval_embedding).squeeze(2)
+        attn_weight = F.softmax(attn_weight, dim=-1)
 
+        x = attn_weight.matmul(V)  # B,L,D
+        x += torch.matmul(attn_weight.unsqueeze(2), hourInterval_embedding).squeeze(2)
+        x += torch.matmul(attn_weight.unsqueeze(2), dayInterval_embedding).squeeze(2)
 
-        x=self.norm11(x+src)
-        ffn_output=self.feedforward1(x)
-        ffn_output=self.norm12(x+ffn_output)
+        x = self.norm11(x + src)
+        ffn_output = self.feedforward1(x)
+        ffn_output = self.norm12(x + ffn_output)
         '''
 
         src=ffn_output
@@ -346,8 +341,11 @@ class GRUModel(nn.Module):
         ffn_output = self.norm22(x + ffn_output)
         '''
 
-        #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
-        ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
+        # attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
+        ffn_output = ffn_output.unsqueeze(2).repeat(1, 1, ffn_output.shape[1], 1).transpose(2, 1)
+        ffn_output = torch.add(ffn_output, label_hourInterval_embedding)
+        ffn_output = torch.add(ffn_output, label_dayInterval_embedding)
+        ffn_output = torch.add(ffn_output, label_longInterval_embedding)
         '''
         
         decoder_output_poi = self.decoder_poi(ffn_output)
@@ -356,20 +354,14 @@ class GRUModel(nn.Module):
         for i in range(decoder_output_poi.shape[1]):
             pooled_poi[:,i]=torch.mean(decoder_output_poi[:,i,:i+1],dim=1)
         '''
-        ffn_output = self.proj(ffn_output)
-        batch_user_embedding=self.u_proj(batch_user_embedding)
-        batch_user_embedding=batch_user_embedding.unsqueeze(1).repeat(1,src.shape[1],1).unsqueeze(2).repeat(1,1,src.shape[1],1)
-        batch_user_embedding=torch.add(batch_user_embedding,label_hourInterval_embedding)
-        batch_user_embedding=torch.add(batch_user_embedding,label_dayInterval_embedding)
+        batch_user_embedding = self.u_proj(batch_user_embedding)
         attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
         for i in range(src.shape[1]):
             attention_weights[:, i, :i + 1] = F.softmax(
-                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, i,:i + 1], dim=-1)/scalr, dim=-1)
+                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, :i + 1], dim=-1) / math.sqrt(self.nhid),
+                dim=-1)
 
         # 根据注意力权重对偏好矩阵进行聚合
         aggregated_preference = torch.sum(ffn_output * attention_weights.unsqueeze(-1), dim=2)
         pooled_poi = self.decoder(aggregated_preference)
         return pooled_poi
-
-
-
