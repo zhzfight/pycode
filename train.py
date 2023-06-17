@@ -18,7 +18,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from dataloader import load_graph_adj_mtx, load_graph_node_features
-from model import GCN,  UserEmbeddings, Time2Vec, CategoryEmbeddings, FuseEmbeddings, GRUModel
+from model import GCN,  UserEmbeddings, Time2Vec, CategoryEmbeddings, FuseEmbeddings, GRUModel,poi_test_embed
 from param_parser import parameter_parser
 from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_last_timestep, \
     mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss
@@ -251,6 +251,7 @@ def train(args):
     # %% Model2: User embedding model, nn.embedding
     num_users = len(user_id2idx_dict)
     user_embed_model = UserEmbeddings(num_users, args.user_embed_dim)
+    p_test_embed_model=poi_test_embed(num_pois,args.poi_embed_dim)
 
     # %% Model3: Time Model
     time_embed_model = Time2Vec('sin', out_dim=args.time_embed_dim)
@@ -279,7 +280,7 @@ def train(args):
                                   list(cat_embed_model.parameters()) +
                                   list(embed_fuse_model1.parameters()) +
                                   list(embed_fuse_model2.parameters()) +
-                                  list(seq_model.parameters()),
+                                  list(seq_model.parameters())+list(p_test_embed_model.parameters()),
                            lr=args.lr,
                            weight_decay=args.weight_decay)
 
@@ -339,6 +340,7 @@ def train(args):
     embed_fuse_model1 = embed_fuse_model1.to(device=args.device)
     embed_fuse_model2 = embed_fuse_model2.to(device=args.device)
     seq_model = seq_model.to(device=args.device)
+    p_test_embed_model=p_test_embed_model.to(device=args.device)
 
     # %% Loop epoch
     # For plotting
@@ -370,6 +372,7 @@ def train(args):
         embed_fuse_model1.train()
         embed_fuse_model2.train()
         seq_model.train()
+        p_test_embed_model.train()
 
         train_batches_top1_acc_list = []
         train_batches_top5_acc_list = []
@@ -392,8 +395,8 @@ def train(args):
             batch_seq_labels_poi = []
             batch_user=[]
 
-            poi_embeddings = poi_embed_model(X, A)
-
+            #poi_embeddings = poi_embed_model(X, A)
+            poi_embeddings=p_test_embed_model(torch.LongTensor([i for i in range(num_pois)]).to(args.device))
             # Convert input seq to embeddings
             for sample in batch:
                 # sample[0]: traj_id, sample[1]: input_seq, sample[2]: label_seq
@@ -485,6 +488,8 @@ def train(args):
         embed_fuse_model1.eval()
         embed_fuse_model2.eval()
         seq_model.eval()
+        p_test_embed_model.eval()
+
         val_batches_top1_acc_list = []
         val_batches_top5_acc_list = []
         val_batches_top10_acc_list = []
@@ -505,7 +510,8 @@ def train(args):
             batch_seq_labels_poi = []
             batch_user=[]
 
-            poi_embeddings = poi_embed_model(X, A)
+            #poi_embeddings = poi_embed_model(X, A)
+            poi_embeddings=p_test_embed_model(torch.LongTensor([i for i in range(num_pois)]).to(args.device))
 
             # Convert input seq to embeddings
             for sample in batch:

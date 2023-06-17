@@ -6,38 +6,12 @@ import torch.nn.functional as F
 import numpy as np
 from torch.nn import Parameter
 
-
-class NodeAttnMap(nn.Module):
-    def __init__(self, in_features, nhid, use_mask=False):
-        super(NodeAttnMap, self).__init__()
-        self.use_mask = use_mask
-        self.out_features = nhid
-        self.W = nn.Parameter(torch.empty(size=(in_features, nhid)))
-        nn.init.xavier_uniform_(self.W.data, gain=1.414)
-        self.a = nn.Parameter(torch.empty(size=(2 * nhid, 1)))
-        nn.init.xavier_uniform_(self.a.data, gain=1.414)
-        self.leakyrelu = nn.LeakyReLU(0.2)
-
-    def forward(self, X, A):
-        Wh = torch.mm(X, self.W)
-
-        e = self._prepare_attentional_mechanism_input(Wh)
-
-        if self.use_mask:
-            e = torch.where(A > 0, e, torch.zeros_like(e))  # mask
-
-        A = A + 1  # shift from 0-1 to 1-2
-        e = e * A
-
-        return e
-
-    def _prepare_attentional_mechanism_input(self, Wh):
-        Wh1 = torch.matmul(Wh, self.a[:self.out_features, :])
-        Wh2 = torch.matmul(Wh, self.a[self.out_features:, :])
-        e = Wh1 + Wh2.T
-        return self.leakyrelu(e)
-
-
+class poi_test_embed(nn.Module):
+    def __init__(self,num_poi,dim):
+        super(poi_test_embed,self).__init__()
+        self.embed=nn.Embedding(num_embeddings=num_poi,embedding_dim=dim)
+    def forward(self,poi_idx):
+        return self.embed(poi_idx)
 class GraphConvolution(nn.Module):
     def __init__(self, in_features, out_features, bias=True):
         super(GraphConvolution, self).__init__()
@@ -262,7 +236,7 @@ class GRUModel(nn.Module):
                         ((batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu)) / self.time_bin) + 2
                     label_dayInterval[i][j][k] = (int(
                         (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu))) % 7 + 1
-                    label_longInterval[i][j][k] = (batch_input_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu * 30)
+                    label_longInterval[i][j][k] = (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu * 30)
 
         etl, etu = self.emb_tl(mask), self.emb_tu(mask)
         vtl, vtu = (longInterval).unsqueeze(-1).expand(-1, -1, -1, self.nhid), \
