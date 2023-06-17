@@ -250,7 +250,7 @@ def train(args):
 
     # %% Model2: User embedding model, nn.embedding
     num_users = len(user_id2idx_dict)
-    user_embed_model = UserEmbeddings(num_users, args.user_embed_dim)
+
     p_test_embed_model=poi_test_embed(num_pois,args.poi_embed_dim)
 
     # %% Model3: Time Model
@@ -265,6 +265,7 @@ def train(args):
 
     # %% Model6: Sequence model
     args.seq_input_embed = args.poi_embed_dim  + args.time_embed_dim + args.cat_embed_dim
+    user_embed_model = UserEmbeddings(num_users, args.seq_input_embed)
     seq_model = GRUModel(num_poi=num_pois,
                          num_cat=num_cats,
                          nhid=args.seq_input_embed,
