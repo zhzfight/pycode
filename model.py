@@ -199,7 +199,6 @@ class GRUModel(nn.Module):
         # self.encoder = nn.Embedding(num_poi, embed_size)
 
         self.decoder_poi = nn.Linear(nhid, num_poi)
-        self.decoder_cat = nn.Linear(nhid, num_cat)
         self.tu=24*3600
         self.time_bin=3600
         assert (self.tu)%self.time_bin==0
@@ -255,15 +254,13 @@ class GRUModel(nn.Module):
                         hourInterval[i][j][k]=1
                     else:
                         hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/self.time_bin)+2
-                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))+1
-                    if dayInterval[i][j][k]>6:
-                        dayInterval[i][j][k]=7
+                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))%7+1
+
                     label_hourInterval[i][j][k] = int(
                         ((batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu)) / self.time_bin) + 2
                     label_dayInterval[i][j][k] = int(
-                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu)) + 1
-                    if label_dayInterval[i][j][k] > 6:
-                        label_dayInterval[i][j][k] = 7
+                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu))%7 + 1
+
 
 
 
@@ -341,20 +338,13 @@ class GRUModel(nn.Module):
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
-        '''
-        paddings = torch.ones(ffn_output.shape) * (-2 ** 32 + 1)
-        paddings = paddings.to(self.device)
-        ffn_output = torch.where(attn_mask, paddings, ffn_output)
-        '''
+
         decoder_output_poi = self.decoder_poi(ffn_output)
-        decoder_output_cat = self.decoder_cat(ffn_output)
         pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3]).to(self.device)
-        pooled_cat=torch.zeros(decoder_output_cat.shape[0],decoder_output_cat.shape[1],decoder_output_cat.shape[3]).to(self.device)
         for i in range(decoder_output_poi.shape[1]):
             pooled_poi[:,i]=torch.mean(decoder_output_poi[:,i,:i+1],dim=1)
-            pooled_cat[:,i]=torch.mean(decoder_output_cat[:,i,:i+1],dim=1)
 
-        return pooled_poi,pooled_cat
+        return pooled_poi
 
 
 
