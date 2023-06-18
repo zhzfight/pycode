@@ -218,7 +218,7 @@ def train(args):
                                              nhid=args.seq_input_embed,
                                              batch_size=args.batch,
                                              device=args.device,
-                                             dropout=args.dropout)
+                                             dropout=args.dropout,user_dim=args.user_embed_dim)
 
     # Define overall loss and optimizer
     optimizer = optim.Adam(params=list(poi_embed_model.parameters()) +
@@ -306,9 +306,11 @@ def train(args):
             batch_label_seqs = []
             batch_label_seqs_h=[]
             batch_label_seqs_w=[]
+            batch_user=[]
 
             # Convert input seq to embeddings
             for sample in batch:
+                batch_user.append(sample[0])
                 input_seq_h = [each[2] for each in sample[1]]
                 batch_input_seqs_h.append(input_seq_h)
                 input_seq_w=[each[3] for each in sample[1]]
@@ -327,11 +329,12 @@ def train(args):
             # Pad seqs for batch training
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
+            batch_user_embedding=user_embed_model(torch.LongTensor(batch_user).to(args.device))
 
             # Feedforward
             x = batch_padded.to(device=args.device, dtype=torch.float)
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
-            y_pred_poi = seq_model(x, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w)
+            y_pred_poi = seq_model(x, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w,batch_user_embedding)
 
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
 
@@ -414,9 +417,11 @@ def train(args):
             batch_label_seqs = []
             batch_label_seqs_h = []
             batch_label_seqs_w = []
+            batch_user=[]
 
             # Convert input seq to embeddings
             for sample in batch:
+                batch_user.append(sample[0])
                 input_seq_h = [each[2] for each in sample[1]]
                 batch_input_seqs_h.append(input_seq_h)
                 input_seq_w = [each[3] for each in sample[1]]
@@ -434,11 +439,11 @@ def train(args):
             # Pad seqs for batch training
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
-
+            batch_user_embedding = user_embed_model(torch.LongTensor(batch_user).to(args.device))
             # Feedforward
             x = batch_padded.to(device=args.device, dtype=torch.float)
             y_poi = label_padded_poi.to(device=args.device, dtype=torch.long)
-            y_pred_poi = seq_model(x, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w)
+            y_pred_poi = seq_model(x, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w,batch_user_embedding)
 
             # Calculate loss
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
