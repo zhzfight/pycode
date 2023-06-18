@@ -128,6 +128,7 @@ def train(args):
                     continue
                 input_start_idx = max(len(poi_ids) - 2 - args.max_seq_len, 0)
                 label_start_idx = input_start_idx + 1
+                self.users.append(user)
                 self.input_seqs.append(list(
                     zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
                         h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))
@@ -161,6 +162,7 @@ def train(args):
                     continue
                 input_start_idx = max(len(poi_ids) - 1 - args.max_seq_len, 0)
                 label_start_idx = input_start_idx + 1
+                self.users.append(user)
                 self.input_seqs.append(list(
                     zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
                         h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))
