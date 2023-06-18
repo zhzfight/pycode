@@ -65,10 +65,10 @@ class TimeIntervalAwareTransformer(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
 
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
-        self.hour_embedding=nn.Embedding(26,nhid,padding_idx=0)
+        self.hour_embedding=nn.Embedding(25,nhid,padding_idx=0)
 
         self.label_day_embedding=nn.Embedding(8,nhid,padding_idx=0)
-        self.label_hour_embedding = nn.Embedding(26, nhid, padding_idx=0)
+        self.label_hour_embedding = nn.Embedding(25, nhid, padding_idx=0)
 
         self.W1_Q=nn.Linear(nhid,nhid)
         self.W1_K=nn.Linear(nhid,nhid)
@@ -118,14 +118,11 @@ class TimeIntervalAwareTransformer(nn.Module):
         for i in range(src.shape[0]):
             for j in range(batch_seq_lens[i]):
                 for k in range(j+1):
-                    if i==j:
-                        hourInterval[i][j][k]=1
-                    else:
-                        hourInterval[i][j][k]=abs(batch_input_seqs_h[i][j]-batch_input_seqs_h[i][k])+2
-                    dayInterval[i][j][k]=abs(batch_input_seqs_w[i][j]-batch_input_seqs_w[i][k])+1
+                    hourInterval[i][j][k]=(batch_input_seqs_h[i][j]-batch_input_seqs_h[i][k])%24+1
+                    dayInterval[i][j][k]=(batch_input_seqs_w[i][j]-batch_input_seqs_w[i][k])%7+1
 
-                    label_hourInterval[i][j][k] = abs(batch_label_seqs_h[i][j]-batch_input_seqs_h[i][k]) + 2
-                    label_dayInterval[i][j][k] = abs(batch_label_seqs_w[i][j]-batch_input_seqs_w[i][k]) + 1
+                    label_hourInterval[i][j][k] = (batch_label_seqs_h[i][j]-batch_input_seqs_h[i][k])%24 + 1
+                    label_dayInterval[i][j][k] = (batch_label_seqs_w[i][j]-batch_input_seqs_w[i][k])%7 + 1
 
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
