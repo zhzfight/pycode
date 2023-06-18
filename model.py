@@ -5,6 +5,9 @@ import torch.nn as nn
 import torch.nn.functional as F
 import numpy as np
 from torch.nn import Parameter
+from math import pi, log
+
+from einops import rearrange, repeat
 
 
 class PoiEmbeddings(nn.Module):
@@ -14,6 +17,12 @@ class PoiEmbeddings(nn.Module):
     def forward(self,poi_idx):
         return self.poi_embedding(poi_idx)
 
+class TimeEmbeddings(nn.Module):
+    def __init__(self,embedding_dim):
+        super(TimeEmbeddings,self).__init__()
+        self.time_embedding=nn.Embedding(num_embeddings=24*7,embedding_dim=embedding_dim)
+    def forward(self,time_idx):
+        return self.time_embedding(time_idx)
 class UserEmbeddings(nn.Module):
     def __init__(self, num_users, embedding_dim):
         super(UserEmbeddings, self).__init__()
@@ -42,75 +51,10 @@ class CategoryEmbeddings(nn.Module):
         return embed
 
 
-class FuseEmbeddings(nn.Module):
-    def __init__(self, user_embed_dim, poi_embed_dim):
-        super(FuseEmbeddings, self).__init__()
-        embed_dim = user_embed_dim + poi_embed_dim
-        self.fuse_embed = nn.Linear(embed_dim, embed_dim)
-        self.leaky_relu = nn.LeakyReLU(0.2)
 
-    def forward(self, user_embed, poi_embed):
-        x = self.fuse_embed(torch.cat((user_embed, poi_embed), 0))
-        x = self.leaky_relu(x)
-        return x
-
-
-def t2v(tau, f, out_features, w, b, w0, b0, arg=None):
-    if arg:
-        v1 = f(torch.matmul(tau, w) + b, arg)
-    else:
-        v1 = f(torch.matmul(tau, w) + b)
-    v2 = torch.matmul(tau, w0) + b0
-    return torch.cat([v1, v2], 1)
-
-
-class SineActivation(nn.Module):
-    def __init__(self, in_features, out_features):
-        super(SineActivation, self).__init__()
-        self.out_features = out_features
-        self.w0 = nn.parameter.Parameter(torch.randn(in_features, 1))
-        self.b0 = nn.parameter.Parameter(torch.randn(in_features, 1))
-        self.w = nn.parameter.Parameter(torch.randn(in_features, out_features - 1))
-        self.b = nn.parameter.Parameter(torch.randn(in_features, out_features - 1))
-        self.f = torch.sin
-
-    def forward(self, tau):
-        return t2v(tau, self.f, self.out_features, self.w, self.b, self.w0, self.b0)
-
-
-class CosineActivation(nn.Module):
-    def __init__(self, in_features, out_features):
-        super(CosineActivation, self).__init__()
-        self.out_features = out_features
-        self.w0 = nn.parameter.Parameter(torch.randn(in_features, 1))
-        self.b0 = nn.parameter.Parameter(torch.randn(in_features, 1))
-        self.w = nn.parameter.Parameter(torch.randn(in_features, out_features - 1))
-        self.b = nn.parameter.Parameter(torch.randn(in_features, out_features - 1))
-        self.f = torch.cos
-
-    def forward(self, tau):
-        return t2v(tau, self.f, self.out_features, self.w, self.b, self.w0, self.b0)
-
-
-class Time2Vec(nn.Module):
-    def __init__(self, activation, out_dim):
-        super(Time2Vec, self).__init__()
-        if activation == "sin":
-            self.l1 = SineActivation(1, out_dim)
-        elif activation == "cos":
-            self.l1 = CosineActivation(1, out_dim)
-
-    def forward(self, x):
-        x = self.l1(x)
-        return x
-
-
-
-
-
-class GRUModel(nn.Module):
+class TimeIntervalAwareTransformer(nn.Module):
     def __init__(self, num_poi, num_cat, nhid,batch_size, device,dropout):
-        super(GRUModel, self).__init__()
+        super(TimeIntervalAwareTransformer, self).__init__()
 
 
         self.device=device
@@ -152,6 +96,7 @@ class GRUModel(nn.Module):
 
 
         self.init_weights()
+        self.rotary_emb = RotaryEmbedding(dim=nhid)
 
 
 
@@ -161,7 +106,7 @@ class GRUModel(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src,batch_seq_lens,batch_input_seqs_ts,batch_label_seqs_ts):
+    def forward(self, src, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
 
@@ -173,16 +118,11 @@ class GRUModel(nn.Module):
                     if i==j:
                         hourInterval[i][j][k]=1
                     else:
-                        hourInterval[i][j][k]=int(((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])%(self.tu))/self.time_bin)+2
-                    dayInterval[i][j][k]=int((batch_input_seqs_ts[i][j]-batch_input_seqs_ts[i][k])/(self.tu))%7+1
+                        hourInterval[i][j][k]=abs(batch_input_seqs_h[i][j]-batch_input_seqs_h[i][k])+2
+                    dayInterval[i][j][k]=abs(batch_input_seqs_w[i][j]-batch_input_seqs_w[i][k])+1
 
-                    label_hourInterval[i][j][k] = int(
-                        ((batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) % (self.tu)) / self.time_bin) + 2
-                    label_dayInterval[i][j][k] = int(
-                        (batch_label_seqs_ts[i][j] - batch_input_seqs_ts[i][k]) / (self.tu))%7 + 1
-
-
-
+                    label_hourInterval[i][j][k] = abs(batch_label_seqs_h[i][j]-batch_input_seqs_h[i][k]) + 2
+                    label_dayInterval[i][j][k] = abs(batch_label_seqs_w[i][j]-batch_input_seqs_w[i][k]) + 1
 
 
         hourInterval_embedding=self.hour_embedding(hourInterval)
@@ -200,6 +140,7 @@ class GRUModel(nn.Module):
         attn_mask = attn_mask.unsqueeze(0).expand(src.shape[0], -1, -1)
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, src.shape[1])
 
+        src=self.rotary_emb.rotate_queries_or_keys(src)
         Q=self.W1_Q(src)
         K=self.W1_K(src)
         V=self.W1_V(src)
@@ -256,6 +197,7 @@ class GRUModel(nn.Module):
 
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
+        ffn_output=self.rotary_emb.rotate_queries_or_keys(ffn_output)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
 
@@ -266,5 +208,91 @@ class GRUModel(nn.Module):
 
         return pooled_poi
 
+def exists(val):
+    return val is not None
 
+# rotary embedding helper functions
+
+def rotate_half(x):
+    x = rearrange(x, '... (d r) -> ... d r', r = 2)
+    x1, x2 = x.unbind(dim = -1)
+    x = torch.stack((-x2, x1), dim = -1)
+    return rearrange(x, '... d r -> ... (d r)')
+
+def apply_rotary_emb(freqs, t, start_index = 0, scale = 1.):
+    freqs = freqs.to(t)
+    rot_dim = freqs.shape[-1]
+    end_index = start_index + rot_dim
+    assert rot_dim <= t.shape[-1], f'feature dimension {t.shape[-1]} is not of sufficient size to rotate in all the positions {rot_dim}'
+    t_left, t, t_right = t[..., :start_index], t[..., start_index:end_index], t[..., end_index:]
+    t = (t * freqs.cos() * scale) + (rotate_half(t) * freqs.sin() * scale)
+    return torch.cat((t_left, t, t_right), dim = -1)
+
+# learned rotation helpers
+
+
+
+# classes
+
+class RotaryEmbedding(nn.Module):
+    def __init__(
+        self,
+        dim,
+        custom_freqs = None,
+        freqs_for = 'lang',
+        theta = 10000,
+        max_freq = 10,
+        num_freqs = 1,
+        learned_freq = False,
+        use_xpos = False,
+        xpos_scale_base = 512,
+    ):
+        super().__init__()
+        if exists(custom_freqs):
+            freqs = custom_freqs
+        elif freqs_for == 'lang':
+            freqs = 1. / (theta ** (torch.arange(0, dim, 2)[:(dim // 2)].float() / dim))
+        elif freqs_for == 'pixel':
+            freqs = torch.linspace(1., max_freq / 2, dim // 2) * pi
+        elif freqs_for == 'constant':
+            freqs = torch.ones(num_freqs).float()
+        else:
+            raise ValueError(f'unknown modality {freqs_for}')
+
+        self.cache = dict()
+        self.cache_scale = dict()
+        self.freqs = nn.Parameter(freqs, requires_grad = learned_freq)
+
+        self.use_xpos = use_xpos
+        if not use_xpos:
+            self.register_buffer('scale', None)
+            return
+
+        scale = (torch.arange(0, dim, 2) + 0.4 * dim) / (1.4 * dim)
+        self.scale_base = xpos_scale_base
+        self.register_buffer('scale', scale)
+
+    def rotate_queries_or_keys(self, t, seq_dim = -2):
+        assert not self.use_xpos, 'you must use `.rotate_queries_and_keys` method instead and pass in both queries and keys, for length extrapolatable rotary embeddings'
+        device, seq_len = t.device, t.shape[seq_dim]
+        freqs = self.forward(lambda: torch.arange(seq_len, device = device), cache_key = seq_len)
+        return apply_rotary_emb(freqs, t)
+
+
+    def forward(self, t, cache_key = None):
+        if exists(cache_key) and cache_key in self.cache:
+            return self.cache[cache_key]
+
+        if callable(t):
+            t = t()
+
+        freqs = self.freqs
+
+        freqs = torch.einsum('..., f -> ... f', t.type(freqs.dtype), freqs)
+        freqs = repeat(freqs, '... n -> ... (n r)', r = 2)
+
+        if exists(cache_key):
+            self.cache[cache_key] = freqs
+
+        return freqs
 

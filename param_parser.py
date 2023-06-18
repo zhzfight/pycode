@@ -11,7 +11,7 @@ else:
 
 def parameter_parser():
     parser = argparse.ArgumentParser(description="Run GETNext.")
-    parser.add_argument('--max-len',type=int,default=30,help='max seq len')
+    parser.add_argument('--max-seq-len',type=int,default=150,help='max seq len')
     parser.add_argument('--seed',
                         type=int,
                         default=42,
@@ -20,35 +20,12 @@ def parameter_parser():
                         type=str,
                         default=device,
                         help='')
-    # Data
-    parser.add_argument('--data-adj-mtx',
+
+    parser.add_argument('--dataset',
                         type=str,
-                        default='dataset/NYC/graph_A.csv',
-                        help='Graph adjacent path')
-    parser.add_argument('--data-node-feats',
-                        type=str,
-                        default='dataset/NYC/graph_X.csv',
-                        help='Graph node features path')
-    parser.add_argument('--data-train',
-                        type=str,
-                        default='dataset/NYC//NYC_train.csv',
-                        help='Training data path')
-    parser.add_argument('--data-val',
-                        type=str,
-                        default='dataset/NYC/NYC_test.csv',
-                        help='Validation data path')
-    parser.add_argument('--short-traj-thres',
-                        type=int,
-                        default=2,
-                        help='Remove over-short trajectory')
-    parser.add_argument('--time-units',
-                        type=int,
-                        default=48,
-                        help='Time unit is 0.5 hour, 24/0.5=48')
-    parser.add_argument('--time-feature',
-                        type=str,
-                        default='norm_in_day_time',
-                        help='The name of time feature in the data')
+                        default='dataset/NYC/NYC.csv',
+                        help='dataset path')
+
 
     # Model hyper-parameters
     parser.add_argument('--poi-embed-dim',
@@ -59,22 +36,11 @@ def parameter_parser():
                         type=int,
                         default=128,
                         help='User embedding dimensions')
-    parser.add_argument('--gru-dropout',
+    parser.add_argument('--dropout',
                         type=float,
                         default=0.1,
                         help='Dropout rate for gru')
-    parser.add_argument('--gcn-dropout',
-                        type=float,
-                        default=0.3,
-                        help='Dropout rate for gcn')
-    parser.add_argument('--gcn-nhid',
-                        type=list,
-                        default=[32, 64],
-                        help='List of hidden dims for gcn layers')
-    parser.add_argument('--seqmodel-nhid',
-                        type=int,
-                        default=1024,
-                        help='Hid dim in TransformerEncoder')
+
 
     parser.add_argument('--time-embed-dim',
                         type=int,
@@ -88,10 +54,7 @@ def parameter_parser():
                         type=int,
                         default=10,
                         help='Scale factor for the time loss term')
-    parser.add_argument('--node-attn-nhid',
-                        type=int,
-                        default=128,
-                        help='Node attn map hidden dimensions')
+
 
     # Training hyper-parameters
     parser.add_argument('--batch',
