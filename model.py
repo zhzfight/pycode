@@ -53,7 +53,7 @@ class CategoryEmbeddings(nn.Module):
 
 
 class TimeIntervalAwareTransformer(nn.Module):
-    def __init__(self, num_poi, num_cat, nhid,batch_size, device,dropout):
+    def __init__(self, num_poi, num_cat, nhid,batch_size, device,dropout,user_dim):
         super(TimeIntervalAwareTransformer, self).__init__()
 
 
@@ -63,11 +63,12 @@ class TimeIntervalAwareTransformer(nn.Module):
         # self.encoder = nn.Embedding(num_poi, embed_size)
 
         self.decoder_poi = nn.Linear(nhid, num_poi)
-        self.tu=24*3600
-        self.time_bin=3600
-        assert (self.tu)%self.time_bin==0
+
         self.day_embedding=nn.Embedding(8,nhid,padding_idx=0)
-        self.hour_embedding=nn.Embedding(int((self.tu)/self.time_bin)+2,nhid,padding_idx=0)
+        self.hour_embedding=nn.Embedding(26,nhid,padding_idx=0)
+
+        self.label_day_embedding=nn.Embedding(8,nhid,padding_idx=0)
+        self.label_hour_embedding = nn.Embedding(26, nhid, padding_idx=0)
 
         self.W1_Q=nn.Linear(nhid,nhid)
         self.W1_K=nn.Linear(nhid,nhid)
@@ -98,6 +99,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         self.init_weights()
         self.rotary_emb_attn = RotaryEmbedding(dim=nhid)
         self.rotary_emb_decode=RotaryEmbedding(dim=nhid)
+        self.u_proj=nn.Linear(user_dim,nhid)
 
 
 
@@ -107,7 +109,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w):
+    def forward(self, src, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w,batch_user_embedding):
         hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
         dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
 
@@ -129,8 +131,8 @@ class TimeIntervalAwareTransformer(nn.Module):
         hourInterval_embedding=self.hour_embedding(hourInterval)
         dayInterval_embedding=self.day_embedding(dayInterval)
 
-        label_hourInterval_embedding=self.hour_embedding(label_hourInterval)
-        label_dayInterval_embedding=self.day_embedding(label_dayInterval)
+        label_hourInterval_embedding=self.label_hour_embedding(label_hourInterval)
+        label_dayInterval_embedding=self.label_day_embedding(label_dayInterval)
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
@@ -201,7 +203,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         ffn_output=self.rotary_emb_decode.rotate_queries_or_keys(ffn_output)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
-
+        batch_user_embedding=self.u_proj(batch_user_embedding)
         decoder_output_poi = self.decoder_poi(ffn_output)
         pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3]).to(self.device)
         for i in range(decoder_output_poi.shape[1]):
