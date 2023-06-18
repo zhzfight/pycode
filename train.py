@@ -241,7 +241,7 @@ def train(args):
         catid_embedded = cat_embed_model(torch.LongTensor(input_seq_cat).to(args.device))
         timebin_embeded = time_embed_model(torch.LongTensor(input_seq_time).to(args.device))
         user_embedded = user_embed_model(torch.LongTensor([user]).to(args.device))
-        user_embedded = user_embedded.expand_as(poiid_embedded)
+        user_embedded = user_embedded.repeat(poiid_embedded.shape[0],1)
         embedded = torch.cat((poiid_embedded, catid_embedded, timebin_embeded, user_embedded), dim=-1)
 
         return embedded
