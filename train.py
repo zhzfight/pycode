@@ -62,9 +62,10 @@ def train(args):
     df['hour_of_week'] = df['datetime'].dt.dayofweek * 24 + df['datetime'].dt.hour
     df['hour_of_day'] = df['datetime'].dt.hour
     df['day_of_week'] = df['datetime'].dt.dayofweek
-    poi_num = df['POI_id'].max()
-    cat_num = df['POI_catid'].max()
-    user_num = df['user_id'].max()
+    poi_num = len(set(df['POI_id'].to_list()))
+    cat_num = len(set(df['POI_catid'].to_list()))
+    user_num = len(set(df['user_id'].to_list()))
+    print(f"poi_num: {poi_num}, cat_num: {cat_num}, user_num: {user_num}")
     poi2cat = df.set_index('POI_id')['POI_catid'].to_dict()
     # %% ====================== Define Dataset ======================
 
@@ -311,10 +312,10 @@ def train(args):
                 label_seq=[each[0] for each in sample[2]]
                 batch_label_seqs.append(torch.LongTensor(label_seq).to(args.device))
                 label_seq_h = [each[2] for each in sample[2]]
-                batch_input_seqs_h.append(label_seq_h)
+                batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
-                batch_input_seqs_w.append(label_seq_w)
-                input_seq_embed = torch.stack(input_traj_to_embeddings(sample))
+                batch_label_seqs_w.append(label_seq_w)
+                input_seq_embed = input_traj_to_embeddings(sample)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
 
@@ -419,10 +420,10 @@ def train(args):
                 label_seq = [each[0] for each in sample[2]]
                 batch_label_seqs.append(torch.LongTensor(label_seq).to(args.device))
                 label_seq_h = [each[2] for each in sample[2]]
-                batch_input_seqs_h.append(label_seq_h)
+                batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
-                batch_input_seqs_w.append(label_seq_w)
-                input_seq_embed = torch.stack(input_traj_to_embeddings(sample))
+                batch_label_seqs_w.append(label_seq_w)
+                input_seq_embed = input_traj_to_embeddings(sample)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
 
