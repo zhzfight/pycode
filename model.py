@@ -96,7 +96,8 @@ class TimeIntervalAwareTransformer(nn.Module):
 
 
         self.init_weights()
-        self.rotary_emb = RotaryEmbedding(dim=nhid)
+        self.rotary_emb_attn = RotaryEmbedding(dim=nhid)
+        self.rotary_emb_decode=RotaryEmbedding(dim=nhid)
 
 
 
@@ -140,7 +141,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         attn_mask = attn_mask.unsqueeze(0).expand(src.shape[0], -1, -1)
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, src.shape[1])
 
-        src=self.rotary_emb.rotate_queries_or_keys(src)
+        src=self.rotary_emb_attn.rotate_queries_or_keys(src)
         Q=self.W1_Q(src)
         K=self.W1_K(src)
         V=self.W1_V(src)
@@ -197,6 +198,7 @@ class TimeIntervalAwareTransformer(nn.Module):
 
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
+        ffn_output=self.rotary_emb_decode(ffn_output)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
 
