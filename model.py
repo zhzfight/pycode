@@ -218,7 +218,7 @@ class TimeIntervalAwareTransformer(nn.Module):
 
         # 根据注意力权重对偏好矩阵进行聚合
         aggregated_preference = torch.sum(ffn_output * attention_weights.unsqueeze(-1), dim=2)
-        pooled_poi = self.decoder(aggregated_preference)
+        pooled_poi = self.decoder_poi(aggregated_preference)
         return pooled_poi
 
 
