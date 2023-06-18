@@ -203,13 +203,24 @@ class TimeIntervalAwareTransformer(nn.Module):
         ffn_output=self.rotary_emb_decode.rotate_queries_or_keys(ffn_output)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
-        batch_user_embedding=self.u_proj(batch_user_embedding)
+        '''
         decoder_output_poi = self.decoder_poi(ffn_output)
         pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3]).to(self.device)
         for i in range(decoder_output_poi.shape[1]):
             pooled_poi[:,i]=torch.mean(decoder_output_poi[:,i,:i+1],dim=1)
+        '''
+        batch_user_embedding = self.u_proj(batch_user_embedding)
+        batch_user_embedding = batch_user_embedding.unsqueeze(1).repeat(1, src.shape[1], 1)
+        attention_weights = torch.zeros(src.shape[0], src.shape[1], src.shape[1]).to(self.device)
+        for i in range(src.shape[1]):
+            attention_weights[:, i, :i + 1] = F.softmax(
+                torch.sum(ffn_output[:, i, :i + 1] * batch_user_embedding[:, :i + 1], dim=-1), dim=-1)
 
+        # 根据注意力权重对偏好矩阵进行聚合
+        aggregated_preference = torch.sum(ffn_output * attention_weights.unsqueeze(-1), dim=2)
+        pooled_poi = self.decoder(aggregated_preference)
         return pooled_poi
+
 
 def exists(val):
     return val is not None
