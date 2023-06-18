@@ -168,7 +168,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         x=self.norm11(x+src)
         ffn_output=self.feedforward1(x)
         ffn_output=self.norm12(x+ffn_output)
-        '''
+
 
         src=ffn_output
 
@@ -194,10 +194,11 @@ class TimeIntervalAwareTransformer(nn.Module):
         x = self.norm21(x + src)
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
-        '''
+
 
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
+        ffn_output=self.rotary_emb_decode.rotate_queries_or_keys(ffn_output)
         ffn_output=self.rotary_emb_decode(ffn_output)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
