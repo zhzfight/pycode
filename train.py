@@ -76,9 +76,9 @@ def train(args):
             self.users = []
             self.input_seqs = []
             self.label_seqs = []
-            input_start_idx = max(-3 - args.max_seq_len, 0)
+
             input_end_idx = -3
-            label_start_idx = input_start_idx + 1
+
             label_end_idx = input_end_idx + 1
             for user in tqdm(set(df['user_id'].tolist())):
                 user_df = df[df['user_id'] == user]
@@ -90,6 +90,8 @@ def train(args):
                 if len(poi_ids) < 5:
                     continue
                 pois_in_train.update(poi_ids)
+                input_start_idx = max(len(poi_ids)-3 - args.max_seq_len, 0)
+                label_start_idx = input_start_idx + 1
                 self.users.append(user)
                 self.input_seqs.append(list(
                     zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
@@ -110,9 +112,7 @@ def train(args):
             self.users = []
             self.input_seqs = []
             self.label_seqs = []
-            input_start_idx = max(-2 - args.max_seq_len, 0)
             input_end_idx = -2
-            label_start_idx = input_start_idx + 1
             label_end_idx = input_end_idx + 1
             for user in tqdm(set(df['user_id'].tolist())):
                 user_df = df[df['user_id'] == user]
@@ -126,6 +126,8 @@ def train(args):
                     continue
                 if poi_ids[-2] not in pois_in_train:
                     continue
+                input_start_idx = max(len(poi_ids) - 2 - args.max_seq_len, 0)
+                label_start_idx = input_start_idx + 1
                 self.input_seqs.append(list(
                     zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
                         h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))
@@ -145,9 +147,7 @@ def train(args):
             self.users = []
             self.input_seqs = []
             self.label_seqs = []
-            input_start_idx = max(-1 - args.max_seq_len, 0)
             input_end_idx = -1
-            label_start_idx = input_start_idx + 1
             for user in tqdm(set(df['user_id'].tolist())):
                 user_df = df[df['user_id'] == user]
                 user_df = user_df.sort_values(by='datetime')
@@ -159,6 +159,8 @@ def train(args):
                     continue
                 if poi_ids[-1] not in pois_in_train:
                     continue
+                input_start_idx = max(len(poi_ids) - 1 - args.max_seq_len, 0)
+                label_start_idx = input_start_idx + 1
                 self.input_seqs.append(list(
                     zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
                         h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))

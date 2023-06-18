@@ -197,7 +197,6 @@ class TimeIntervalAwareTransformer(nn.Module):
 
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
-        ffn_output=self.rotary_emb.rotate_queries_or_keys(ffn_output)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
 
