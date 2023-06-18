@@ -259,7 +259,6 @@ class RotaryEmbedding(nn.Module):
         else:
             raise ValueError(f'unknown modality {freqs_for}')
 
-        self.cache = dict()
         self.cache_scale = dict()
         self.freqs = nn.Parameter(freqs, requires_grad = learned_freq)
 
@@ -280,9 +279,6 @@ class RotaryEmbedding(nn.Module):
 
 
     def forward(self, t, cache_key = None):
-        if exists(cache_key) and cache_key in self.cache:
-            return self.cache[cache_key]
-
         if callable(t):
             t = t()
 
@@ -291,8 +287,6 @@ class RotaryEmbedding(nn.Module):
         freqs = torch.einsum('..., f -> ... f', t.type(freqs.dtype), freqs)
         freqs = repeat(freqs, '... n -> ... (n r)', r = 2)
 
-        if exists(cache_key):
-            self.cache[cache_key] = freqs
 
         return freqs
 
