@@ -5,6 +5,8 @@ import argparse
 import pandas as pd
 from tqdm import tqdm
 import collections
+import networkx as nx
+import numpy as np
 
 preversed_times=5
 def static(df):
@@ -17,6 +19,54 @@ def static(df):
     grouped = df.groupby('user_id')
     average_length = grouped.size().mean()
     print(f"poi_num: {poi_num}, cat_num: {cat_num}, user_num: {user_num}, average seq len: {average_length}")
+def build_global_POI_checkin_graph(df,save_file):
+    G = nx.DiGraph()
+    time_threshold = pd.Timedelta(6, unit='h')
+    for user_id in list(set(df['user_id'].to_list())):
+        user_df = df[df['user_id'] == user_id]
+        user_df = user_df.sort_values(by='datetime')
+        # Add node (POI)
+        train_df=user_df.iloc[:-2]
+        for i, row in train_df.iterrows():
+            node = row['POI_id']
+            if node not in G.nodes():
+                G.add_node(row['POI_id'],
+                           checkin_cnt=1,
+                           poi_catid=row['POI_catid'],
+                           latitude=row['latitude'],
+                           longitude=row['longitude'])
+            else:
+                G.nodes[node]['checkin_cnt'] += 1
+        for i in range(len(train_df) - 1):
+            row1 = train_df.iloc[i]
+            row2 = train_df.iloc[i + 1]
+            time_diff = row2['datetime'] - row1['datetime']
+            if time_diff < time_threshold:
+                source = row1['POI_id']
+                target = row2['POI_id']
+                if G.has_edge(source, target):
+                    G[source][target]['weight'] += 1
+                else:
+                    G.add_edge(source, target, weight=1)
+    nodelist = G.nodes()
+    A = nx.adjacency_matrix(G, nodelist=nodelist)
+    # np.save(os.path.join(dst_dir, 'adj_mtx.npy'), A.todense())
+    np.savetxt(os.path.join(save_file,'graph_A.csv'), A.todense(), delimiter=',')
+
+    # Save nodes list
+    nodes_data = list(G.nodes.data())  # [(node_name, {attr1, attr2}),...]
+    with open(os.path.join(save_file,'graph_X.csv'), 'w') as f:
+        print('node_name/poi_id,checkin_cnt,poi_catid,poi_catid_code,poi_catname,latitude,longitude', file=f)
+        for each in nodes_data:
+            node_name = each[0]
+            checkin_cnt = each[1]['checkin_cnt']
+            poi_catid = each[1]['poi_catid']
+            latitude = each[1]['latitude']
+            longitude = each[1]['longitude']
+            print(f'{node_name},{checkin_cnt},'
+                  f'{poi_catid},'
+                  f'{latitude},{longitude}', file=f)
+    return
 def NYC_IN_GETNext():
     print(
         'now preprocess the dataset NYC used in the paper GETNext\n'
@@ -54,6 +104,8 @@ def NYC_IN_GETNext():
     df = df[df['timezone'].isin(main_timezones)]
     static(df)
     df.to_csv('./dataset/NYC/NYC.csv', index=False)
+    df['datetime'] = pd.to_datetime(df['local_time'])
+
     return
 
 
@@ -72,7 +124,7 @@ def tsmc(dataset):
     col_names = ["user_id", "POI_id", "POI_catid", "poi_cat_name", "latitude", "longitude", "timezone", "local_time"]
 
     # 读取csv文件，并添加列名
-    df = pd.read_csv(file_name, names=col_names, sep='\t')
+    df = pd.read_csv(file_name, names=col_names, sep='\t',encoding='ISO-8859-1')
     main_timezones = df['timezone'].value_counts().head(preserved_timezone).index
     df = df[df['timezone'].isin(main_timezones)]
     lookup = collections.defaultdict(dict)
@@ -102,6 +154,7 @@ def tsmc(dataset):
     df = df[df["POI_id"].isin(valid_pois)]
     static(df)
     df.to_csv(save_name, index=False)
+
     return
 
 

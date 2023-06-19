@@ -11,21 +11,26 @@ else:
 
 def parameter_parser():
     parser = argparse.ArgumentParser(description="Run GETNext.")
-    parser.add_argument('--max-seq-len',type=int,default=150,help='max seq len')
+    parser.add_argument('--max-seq-len',type=int,default=100,help='max seq len')
     parser.add_argument('--seed',
                         type=int,
                         default=42,
                         help='Random seed')
+
     parser.add_argument('--device',
                         type=str,
                         default=device,
                         help='')
-
     parser.add_argument('--dataset',
                         type=str,
                         default='dataset/NYC/NYC.csv',
                         help='dataset path')
-
+    parser.add_argument('--geo-dis',
+                        type=int,
+                        default=750,
+                        help='geo distance less than geo_dis regarded as context poi')
+    parser.add_argument('--sage',
+                        type=bool,default=False)
 
     # Model hyper-parameters
     parser.add_argument('--poi-embed-dim',
