@@ -353,6 +353,7 @@ def train(args):
                                      nhead=1,
                                      nhid=args.seq_input_embed,
                                      nlayers=2,
+                                     device=args.device,
                                      dropout=args.dropout)
     else:
         seq_model = TimeIntervalAwareTransformer(num_poi=poi_num,

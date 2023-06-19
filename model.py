@@ -463,10 +463,11 @@ class GraphSAGE(nn.Module):
         self.layer2.set_adj(adj, dis)
 
 class TransformerModel(nn.Module):
-    def __init__(self, num_poi, num_cat, embed_size, nhead, nhid, nlayers, dropout=0.5):
+    def __init__(self, num_poi, num_cat, embed_size, nhead, nhid, nlayers,device, dropout=0.5):
         super(TransformerModel, self).__init__()
         from torch.nn import TransformerEncoder, TransformerEncoderLayer
         self.model_type = 'Transformer'
+        self.device=device
         self.pos_encoder = PositionalEncoding(embed_size, dropout)
         encoder_layers = TransformerEncoderLayer(embed_size, nhead, nhid, dropout,batch_first=True)
         self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
@@ -486,7 +487,7 @@ class TransformerModel(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w,batch_user_embedding):
-        src_mask=self.generate_square_subsequent_mask(src.shape[1])
+        src_mask=self.generate_square_subsequent_mask(src.shape[1]).to(self.device)
         src = self.pos_encoder(src)
         x = self.transformer_encoder(src, src_mask)
         out_poi = self.decoder_poi(x)
