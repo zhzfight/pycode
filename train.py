@@ -20,14 +20,19 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from model import UserEmbeddings, CategoryEmbeddings, TimeIntervalAwareTransformer, PoiEmbeddings, TimeEmbeddings, \
-    GraphSAGE,TransformerModel
+    GraphSAGE, TransformerModel
 from param_parser import parameter_parser
 from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_last_timestep, \
-    mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss, adj_list, split_list, random_walk_with_restart,\
+    mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss, adj_list, split_list, random_walk_with_restart, \
     get_all_nodes_neighbors
 
 
 def train(args):
+    print(
+        'if you want to use sage mode, you must ensure tow thing,\n'
+        ' first is that you have more than 12,000 available file descriptors. \n'
+        'second is that You must ensure that poi_dim is divisible by 3.\n'
+        'have a nice day.')
     args.save_dir = increment_path(Path(args.project) / args.name, exist_ok=args.exist_ok, sep='-')
     if not os.path.exists(args.save_dir): os.makedirs(args.save_dir)
 
@@ -107,12 +112,11 @@ def train(args):
                     break
             print(self.adjOrdis, self.id, 'quit')
 
-
     pois_in_train = set()
 
     class TrajectoryDatasetTrain(Dataset):
         def __init__(self, df, time_threshold):
-            self.df=df.copy()
+            self.df = df.copy()
             self.users = []
             self.input_seqs = []
             self.label_seqs = []
@@ -158,6 +162,7 @@ def train(args):
             for key, value in adj.items():
                 res[key] = list(value.items())
             return res
+
         def get_X(self):
             # 按照timestamp列排序
             df = self.df.sort_values('datetime', ascending=False)
@@ -166,21 +171,21 @@ def train(args):
             # 删除指定索引的行
             df = df.drop(idx)
 
-            pois=list(set(df['POI_id'].to_list()))
-            geos=[]
-            X = np.zeros((poi_num,(1+cat_num+1+1)),dtype=np.float32)
+            pois = list(set(df['POI_id'].to_list()))
+            geos = []
+            X = np.zeros((poi_num, (1 + cat_num + 1 + 1)), dtype=np.float32)
             print('node feats making')
             for poi in tqdm(pois):
-                checkin_ount=len(df[df['POI_id']==poi])
+                checkin_ount = len(df[df['POI_id'] == poi])
                 cat = df.loc[df['POI_id'] == poi, 'POI_catid'].iloc[0]
-                longitude=df.loc[df['POI_id'] == poi, 'longitude'].iloc[0]
-                latitude=df.loc[df['POI_id'] == poi, 'latitude'].iloc[0]
-                X[poi][0]=checkin_ount
-                X[poi][cat+1]=1
-                X[poi][-2]=longitude
-                X[poi][-1]=latitude
-                geos.append((longitude,latitude))
-            return X,pois,geos
+                longitude = df.loc[df['POI_id'] == poi, 'longitude'].iloc[0]
+                latitude = df.loc[df['POI_id'] == poi, 'latitude'].iloc[0]
+                X[poi][0] = checkin_ount
+                X[poi][cat + 1] = 1
+                X[poi][-2] = longitude
+                X[poi][-1] = latitude
+                geos.append((longitude, latitude))
+            return X, pois, geos
 
         def __len__(self):
             assert len(self.input_seqs) == len(self.label_seqs) == len(self.users)
@@ -261,7 +266,7 @@ def train(args):
 
     # %% ====================== Define dataloader ======================
     print('Prepare dataloader...')
-    train_dataset = TrajectoryDatasetTrain(df,pd.Timedelta(6, unit='h'))
+    train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'))
     val_dataset = TrajectoryDatasetVal(df)
     test_dataset = TrajectoryDatasetTest(df)
 
@@ -282,7 +287,7 @@ def train(args):
                              collate_fn=lambda x: x)
     adj = None
     dis = None
-    X=None
+    X = None
     if args.sage:
         if os.path.exists(os.path.join(os.path.dirname(args.dataset), 'adj.pkl')):
             with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'rb') as f:  # 打开pickle文件
@@ -292,16 +297,15 @@ def train(args):
             # 将数组保存到文件中
             X = np.load(os.path.join(os.path.dirname(args.dataset), 'X.npy'))
         else:
-            adj=train_dataset.get_adj()
-            X,pois,geos=train_dataset.get_X()
+            adj = train_dataset.get_adj()
+            X, pois, geos = train_dataset.get_X()
             print('space neighbor table making, if you have multi cpus, it will be faster.')
-            dis=get_all_nodes_neighbors(pois,geos,args.geo_dis)
+            dis = get_all_nodes_neighbors(pois, geos, args.geo_dis)
             with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'wb') as f:
                 pickle.dump(adj, f)  # 把字典写入pickle文件
             with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'wb') as f:
                 pickle.dump(dis, f)  # 把字典写入pickle文件
             np.save(os.path.join(os.path.dirname(args.dataset), 'X.npy'), X)
-    exit(0)
     adj_queues = None
     dis_queues = None
     if args.sage:
@@ -324,6 +328,9 @@ def train(args):
     # %% ====================== Build Models ======================
 
     if args.sage:
+        if isinstance(X, np.ndarray):
+            X = torch.from_numpy(X)
+        X = X.to(device=args.device, dtype=torch.float)
         poi_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_embed_dim,
                                     device=args.device, restart_prob=args.restart_prob, num_walks=args.num_walks,
                                     dropout=args.dropout, adj_queues=adj_queues, dis_queues=dis_queues)
@@ -340,13 +347,13 @@ def train(args):
     # %% Model6: Sequence model
     args.seq_input_embed = args.poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim
     if args.pure_transformer:
-        seq_model=TransformerModel(poi_num,
-                                 cat_num,
-                                 args.seq_input_embed,
-                                 nhead=1,
-                                 nhid=args.seq_input_embed,
-                                 nlayers=2,
-                                 dropout=args.dropout)
+        seq_model = TransformerModel(poi_num,
+                                     cat_num,
+                                     args.seq_input_embed,
+                                     nhead=1,
+                                     nhid=args.seq_input_embed,
+                                     nlayers=2,
+                                     dropout=args.dropout)
     else:
         seq_model = TimeIntervalAwareTransformer(num_poi=poi_num,
                                                  num_cat=cat_num,

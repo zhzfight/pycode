@@ -25,19 +25,29 @@ def parameter_parser():
                         type=str,
                         default='dataset/NYC/NYC.csv',
                         help='dataset path')
+
+    parser.add_argument('--sage',
+                        type=bool,default=True)
+    parser.add_argument('--pure-transformer',
+                        type=bool, default=True)
+    parser.add_argument('--cpus',type=int,default=4)
     parser.add_argument('--geo-dis',
                         type=int,
                         default=750,
                         help='geo distance less than geo_dis regarded as context poi')
-    parser.add_argument('--sage',
-                        type=bool,default=True)
-    parser.add_argument('--pure-transformer',
-                        type=bool, default=False)
+    parser.add_argument('--restart-prob',
+                        type=float,
+                        default=0.5,
+                        help='random walk with restart prob')
+    parser.add_argument('--num-walks',
+                        type=int,
+                        default=5,
+                        help='random walk with restart step')
 
     # Model hyper-parameters
     parser.add_argument('--poi-embed-dim',
                         type=int,
-                        default=128,
+                        default=180,
                         help='POI embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
