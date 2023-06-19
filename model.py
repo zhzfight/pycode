@@ -448,15 +448,12 @@ class SageLayer(nn.Module):
 
 class GraphSAGE(nn.Module):
     def __init__(self, input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_queues, dis_queues,
-                 all_adj_queues, all_dis_queues,node_remap):
+                 all_adj_queues, all_dis_queues):
         super(GraphSAGE, self).__init__()
         self.id2node = None
         self.device = device
-        self.node_remap=node_remap
-        def remap(nodes):
-            remapped_nodes = [self.node_remap[nodeid] for nodeid in nodes]
-            return self.id2node[remapped_nodes]
-        self.layer2 = SageLayer(id2feat=lambda nodes: remap(nodes),
+
+        self.layer2 = SageLayer(id2feat=lambda nodes: self.id2node[nodes],
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=input_dim,
                                 output_dim=embed_dim, device=device, dropout=dropout, id=2, adj_queues=adj_queues,
                                 dis_queues=dis_queues, all_adj_queues=all_adj_queues, all_dis_queues=all_dis_queues)
@@ -474,4 +471,48 @@ class GraphSAGE(nn.Module):
         self.layer1.set_adj(adj, dis)
         self.layer2.set_adj(adj, dis)
 
+class TransformerModel(nn.Module):
+    def __init__(self, num_poi, num_cat, embed_size, nhead, nhid, nlayers, dropout=0.5):
+        super(TransformerModel, self).__init__()
+        from torch.nn import TransformerEncoder, TransformerEncoderLayer
+        self.model_type = 'Transformer'
+        self.pos_encoder = PositionalEncoding(embed_size, dropout)
+        encoder_layers = TransformerEncoderLayer(embed_size, nhead, nhid, dropout,batch_first=True)
+        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        # self.encoder = nn.Embedding(num_poi, embed_size)
+        self.embed_size = embed_size
+        self.decoder_poi = nn.Linear(embed_size, num_poi)
+        self.init_weights()
 
+    def generate_square_subsequent_mask(self, sz):
+        mask = (torch.triu(torch.ones(sz, sz)) == 1).transpose(0, 1)
+        mask = mask.float().masked_fill(mask == 0, float('-inf')).masked_fill(mask == 1, float(0.0))
+        return mask
+
+    def init_weights(self):
+        initrange = 0.1
+        self.decoder_poi.bias.data.zero_()
+        self.decoder_poi.weight.data.uniform_(-initrange, initrange)
+
+    def forward(self, src, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w,batch_user_embedding):
+        src_mask=self.generate_square_subsequent_mask(src.shape[1])
+        src = self.pos_encoder(src)
+        x = self.transformer_encoder(src, src_mask)
+        out_poi = self.decoder_poi(x)
+        return out_poi
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, dropout=0.1, max_len=500):
+        super(PositionalEncoding, self).__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)

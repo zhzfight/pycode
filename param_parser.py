@@ -31,6 +31,8 @@ def parameter_parser():
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--sage',
                         type=bool,default=False)
+    parser.add_argument('--pure-transformer',
+                        type=bool, default=False)
 
     # Model hyper-parameters
     parser.add_argument('--poi-embed-dim',

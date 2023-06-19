@@ -20,7 +20,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from model import UserEmbeddings, CategoryEmbeddings, TimeIntervalAwareTransformer, PoiEmbeddings, TimeEmbeddings, \
-    GraphSAGE
+    GraphSAGE,TransformerModel
 from param_parser import parameter_parser
 from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_last_timestep, \
     mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss, adj_list, split_list, random_walk_with_restart,\
@@ -159,23 +159,25 @@ def train(args):
                 res[key] = list(value.items())
             return res
         def get_X(self):
-            def remove_last_two(group):
-                return group.nlargest(2, 'timestamp').index
+            # 按照timestamp列排序
+            df = self.df.sort_values('timestamp', ascending=False)
+            # 获取每个组中时间戳最大的两条记录的索引
+            idx = df.groupby('user').tail(2).index
+            # 删除指定索引的行
+            df = df.drop(idx)
 
-            # 按照user列对数据进行分组，然后应用自定义函数
-            idx = self.df.groupby('user').apply(remove_last_two)
-            # 删除指定的行
-            df = self.df.drop(idx)
-
-            poi_counts = df.groupby('POI_id').size().reset_index(name='count')
-            # 对 catid 列进行独热编码
-            cat_dummies = pd.get_dummies(df['catid'], prefix='cat')
-
-            # 拼接所有列
-            features = pd.concat([poi_counts, cat_dummies, df[['longitude', 'latitude']]], axis=1)
-            features_array = features.values
-
-
+            pois=set(df['POI_id'].to_list())
+            X = np.zeros(poi_num,(1+cat_num+1+1),dtype=np.float32)
+            for poi in pois:
+                checkin_ount=len(df[df['POI_id']==poi])
+                cat = df.loc[df['POI_id'] == poi, 'POI_catid'].iloc[0]
+                longitude=df.loc[df['POI_id'] == poi, 'longitude'].iloc[0]
+                latitude=df.loc[df['POI_id'] == poi, 'latitude'].iloc[0]
+                X[poi][0]=checkin_ount
+                X[poi][cat+1]=1
+                X[poi][-2]=longitude
+                X[poi][-1]=latitude
+            return X
 
         def __len__(self):
             assert len(self.input_seqs) == len(self.label_seqs) == len(self.users)
@@ -284,6 +286,8 @@ def train(args):
                 adj = pickle.load(f)  # 读取字典
             with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'rb') as f:  # 打开pickle文件
                 dis = pickle.load(f)  # 读取字典
+            # 将数组保存到文件中
+            X = np.load(os.path.join(os.path.dirname(args.dataset), 'X.npy'))
         else:
             adj=train_dataset.get_adj()
             X=train_dataset.get_X()
@@ -301,6 +305,7 @@ def train(args):
                 pickle.dump(adj, f)  # 把字典写入pickle文件
             with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'wb') as f:
                 pickle.dump(dis, f)  # 把字典写入pickle文件
+            np.save(os.path.join(os.path.dirname(args.dataset), 'X.npy'), X)
 
     adj_queues = None
     dis_queues = None
@@ -339,12 +344,21 @@ def train(args):
 
     # %% Model6: Sequence model
     args.seq_input_embed = args.poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim
-    seq_model = TimeIntervalAwareTransformer(num_poi=poi_num,
-                                             num_cat=cat_num,
-                                             nhid=args.seq_input_embed,
-                                             batch_size=args.batch,
-                                             device=args.device,
-                                             dropout=args.dropout, user_dim=args.user_embed_dim)
+    if args.pure_transformer:
+        seq_model=TransformerModel(poi_num,
+                                 cat_num,
+                                 args.seq_input_embed,
+                                 nhead=1,
+                                 nhid=args.seq_input_embed,
+                                 nlayers=2,
+                                 dropout=args.dropout)
+    else:
+        seq_model = TimeIntervalAwareTransformer(num_poi=poi_num,
+                                                 num_cat=cat_num,
+                                                 nhid=args.seq_input_embed,
+                                                 batch_size=args.batch,
+                                                 device=args.device,
+                                                 dropout=args.dropout, user_dim=args.user_embed_dim)
 
     # Define overall loss and optimizer
     optimizer = optim.Adam(params=list(poi_embed_model.parameters()) +
