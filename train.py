@@ -146,8 +146,8 @@ def train(args):
         def get_adj(self):
             adj = collections.defaultdict(dict)
             for seq in self.input_seqs:
-                pois = seq[0]
-                dt = seq[4]
+                pois = [each[0] for each in seq]
+                dt = [each[4] for each in seq]
                 for i in range(len(pois) - 1):
                     if dt[i + 1] - dt[i] < self.time_threshold:
                         if pois[i + 1] not in adj[pois[i]]:
@@ -160,15 +160,17 @@ def train(args):
             return res
         def get_X(self):
             # 按照timestamp列排序
-            df = self.df.sort_values('timestamp', ascending=False)
+            df = self.df.sort_values('datetime', ascending=False)
             # 获取每个组中时间戳最大的两条记录的索引
-            idx = df.groupby('user').tail(2).index
+            idx = df.groupby('user_id').tail(2).index
             # 删除指定索引的行
             df = df.drop(idx)
 
-            pois=set(df['POI_id'].to_list())
-            X = np.zeros(poi_num,(1+cat_num+1+1),dtype=np.float32)
-            for poi in pois:
+            pois=list(set(df['POI_id'].to_list()))
+            geos=[]
+            X = np.zeros((poi_num,(1+cat_num+1+1)),dtype=np.float32)
+            print('node feats making')
+            for poi in tqdm(pois):
                 checkin_ount=len(df[df['POI_id']==poi])
                 cat = df.loc[df['POI_id'] == poi, 'POI_catid'].iloc[0]
                 longitude=df.loc[df['POI_id'] == poi, 'longitude'].iloc[0]
@@ -177,7 +179,8 @@ def train(args):
                 X[poi][cat+1]=1
                 X[poi][-2]=longitude
                 X[poi][-1]=latitude
-            return X
+                geos.append((longitude,latitude))
+            return X,pois,geos
 
         def __len__(self):
             assert len(self.input_seqs) == len(self.label_seqs) == len(self.users)
@@ -290,23 +293,15 @@ def train(args):
             X = np.load(os.path.join(os.path.dirname(args.dataset), 'X.npy'))
         else:
             adj=train_dataset.get_adj()
-            X=train_dataset.get_X()
-            poi_df = df[df['POI_id'].isin(list(pois_in_train))]
-            pois=[]
-            geos=[]
-            for index, row in poi_df.iterrows():
-                poi_id = row['POI_id']
-                longitude = row['longitude']
-                latitude = row['latitude']
-                pois.append(poi_id)
-                geos.append((longitude,latitude))
+            X,pois,geos=train_dataset.get_X()
+            print('space neighbor table making, if you have multi cpus, it will be faster.')
             dis=get_all_nodes_neighbors(pois,geos,args.geo_dis)
             with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'wb') as f:
                 pickle.dump(adj, f)  # 把字典写入pickle文件
             with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'wb') as f:
                 pickle.dump(dis, f)  # 把字典写入pickle文件
             np.save(os.path.join(os.path.dirname(args.dataset), 'X.npy'), X)
-
+    exit(0)
     adj_queues = None
     dis_queues = None
     if args.sage:

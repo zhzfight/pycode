@@ -35,9 +35,8 @@ def to1(weights,adjOrDis):
 
 # 随机选择一个邻居节点
 def choose_neighbor(graph, node,adjOrDis):
-    if len(graph[node])==0:
+    if node not in graph:
         return None
-
     neighbors = [each[0] for each in graph[node]]
     weights = [each[1] for each in graph[node]]
     # 归一化权重
@@ -85,10 +84,11 @@ def get_node_geo_context_neighbors(index, nodes,geos, geo_dis):
     return neighbors
 # 定义一个函数，获取所有节点的邻居列表
 def get_all_nodes_neighbors(nodes,geos,geo_dis):
-    result = process_map(get_node_geo_context_neighbors, range(len(nodes)), [nodes] * len(nodes),[geos]*len(geos),
-                         [geo_dis] * len(nodes), max_workers=None, chunksize=1)
+    ls=len(nodes)
+    result = process_map(get_node_geo_context_neighbors, range(ls), [nodes] * ls,[geos]*ls,
+                         [geo_dis] * ls, max_workers=None, chunksize=1)
     dis={}
-    for i in range(nodes):
+    for i in range(len(nodes)):
         dis[nodes[i]]=result[i]
     return result
 
