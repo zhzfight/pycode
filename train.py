@@ -31,7 +31,7 @@ from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_
 def train(args):
     print(
         'three mode you can choose,1.poi-sage 2.poi 3.sage\n'
-        'you can set mode through args.mode.\n'
+        'you can set mode through args.embed_mode.\n'
         'if you want to use sage mode, you must ensure tow thing,\n'
         ' first is that you have more than 12,000 available file descriptors. \n'
         'second is that You must ensure that poi_dim is divisible by 3.\n'
@@ -301,7 +301,7 @@ def train(args):
     adj = None
     dis = None
     X = None
-    if args.mode != 'poi':
+    if args.embed_mode != 'poi':
         if os.path.exists(os.path.join(os.path.dirname(args.dataset), 'adj.pkl')):
             with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'rb') as f:  # 打开pickle文件
                 adj = pickle.load(f)  # 读取字典
@@ -335,7 +335,7 @@ def train(args):
     adj_queues = None
     dis_queues = None
     stop_event = None
-    if args.mode != 'poi':
+    if args.embed_mode != 'poi':
         threshold = 10  # 队列大小阈值
         adj_queues = {node: multiprocessing.Queue() for node in range(poi_num)}  # 创建多个队列
         dis_queues = {node: multiprocessing.Queue() for node in range(poi_num)}  # 创建多个队列
@@ -353,13 +353,13 @@ def train(args):
             dp.start()
 
     # %% ====================== Build Models ======================
-    poi_id_embed_model = PoiEmbeddings(poi_num, args.poi_embed_dim)
+    poi_id_embed_model = PoiEmbeddings(poi_num, args.poi_id_dim)
     poi_sage_embed_model = None
-    if args.mode != 'poi':
+    if args.embed_mode != 'poi':
         if isinstance(X, np.ndarray):
             X = torch.from_numpy(X)
         X = X.to(device=args.device, dtype=torch.float)
-        poi_sage_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_embed_dim,
+        poi_sage_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_sage_dim,
                                          device=args.device, restart_prob=args.restart_prob, num_walks=args.num_walks,
                                          dropout=args.dropout, adj_queues=adj_queues, dis_queues=dis_queues)
 
@@ -373,9 +373,9 @@ def train(args):
 
     # %% Model6: Sequence model
     poi_embed_dim=0
-    if args.mode=='poi-sage':
+    if args.embed_mode=='poi-sage':
         poi_embed_dim=args.poi_sage_dim+args.poi_id_dim
-    elif args.mode=='sage':
+    elif args.embed_mode=='sage':
         poi_embed_dim=args.poi_sage_dim
     else:
         poi_embed_dim=args.poi_id_dim
@@ -444,12 +444,12 @@ def train(args):
         return embedded
 
     # %% ====================== Train ======================
-    if args.mode=='poi-sage':
+    if args.embed_mode=='poi-sage':
         poi_sage_embed_model=poi_sage_embed_model.to(device=args.device)
         poi_id_embed_model=poi_id_embed_model.to(device=args.device)
-    elif args.mode=='sage':
+    elif args.embed_mode=='sage':
         poi_sage_embed_model = poi_sage_embed_model.to(device=args.device)
-    elif args.mode=='poi':
+    elif args.embed_mode=='poi':
         poi_id_embed_model=poi_id_embed_model.to(device=args.device)
     user_embed_model = user_embed_model.to(device=args.device)
     time_embed_model = time_embed_model.to(device=args.device)
@@ -479,12 +479,12 @@ def train(args):
 
     for epoch in range(args.epochs):
         logging.info(f"{'*' * 50}Epoch:{epoch:03d}{'*' * 50}\n")
-        if args.mode=='poi-sage':
+        if args.embed_mode=='poi-sage':
             poi_sage_embed_model.train()
             poi_id_embed_model.train()
-        elif args.mode=='sage':
+        elif args.embed_mode=='sage':
             poi_sage_embed_model.train()
-        elif args.mode=='poi':
+        elif args.embed_mode=='poi':
             poi_id_embed_model.train()
         user_embed_model.train()
         time_embed_model.train()
@@ -515,7 +515,7 @@ def train(args):
 
             poi_embeddings = None
             embedding_index = 0
-            if args.mode != 'poi':
+            if args.embed_mode != 'poi':
                 pois = [each[0] for sample in batch for each in sample[1]]
                 poi_sage_embed_model.setup(X, adj, dis)
                 poi_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
@@ -532,7 +532,7 @@ def train(args):
                 batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
                 batch_label_seqs_w.append(label_seq_w)
-                input_seq_embed = input_traj_to_embeddings(sample, args.mode, poi_embeddings, embedding_index)
+                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, poi_embeddings, embedding_index)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
                 embedding_index += len(input_seq_h)
@@ -604,12 +604,12 @@ def train(args):
                              '=' * 100)
 
         # train end --------------------------------------------------------------------------------------------------------
-        if args.mode == 'poi-sage':
+        if args.embed_mode == 'poi-sage':
             poi_sage_embed_model.eval()
             poi_id_embed_model.eval()
-        elif args.mode == 'sage':
+        elif args.embed_mode == 'sage':
             poi_sage_embed_model.eval()
-        elif args.mode == 'poi':
+        elif args.embed_mode == 'poi':
             poi_id_embed_model.eval()
 
         user_embed_model.eval()
@@ -626,7 +626,7 @@ def train(args):
         val_batches_poi_loss_list = []
         poi_embeddings = None
         embedding_index = None
-        if args.mode != 'poi':
+        if args.embed_mode != 'poi':
             pois = [n for n in range(poi_num)]
             poi_sage_embed_model.setup(X, adj, dis)
             poi_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
@@ -655,7 +655,7 @@ def train(args):
                 batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
                 batch_label_seqs_w.append(label_seq_w)
-                input_seq_embed = input_traj_to_embeddings(sample, args.mode, poi_embeddings, embedding_index)
+                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, poi_embeddings, embedding_index)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
 
@@ -805,7 +805,7 @@ def train(args):
             print(f'val_epochs_mAP20_list={[float(f"{each:.4f}") for each in val_epochs_mAP20_list]}', file=f)
             print(f'val_epochs_mrr_list={[float(f"{each:.4f}") for each in val_epochs_mrr_list]}', file=f)
     print('ok! it is over.')
-    if args.mode:
+    if args.embed_mode:
         stop_event.set()
 
 

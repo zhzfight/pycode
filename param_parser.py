@@ -26,7 +26,7 @@ def parameter_parser():
                         default='dataset/NYC/NYC.csv',
                         help='dataset path')
 
-    parser.add_argument('--mode',
+    parser.add_argument('--embed-mode',
                         type=str,default='poi-sage',)
     parser.add_argument('--pure-transformer',
                         type=bool, default=True)
