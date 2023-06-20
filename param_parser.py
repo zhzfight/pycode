@@ -33,7 +33,7 @@ def parameter_parser():
     parser.add_argument('--cpus',type=int,default=4)
     parser.add_argument('--geo-dis',
                         type=int,
-                        default=750,
+                        default=300,
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,

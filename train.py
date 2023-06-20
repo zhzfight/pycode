@@ -164,8 +164,17 @@ def train(args):
             return res
 
         def get_X(self):
+            def remap_checkIn_count(checkIn_count):
+                if checkIn_count< 10:
+                    return 0
+                elif checkIn_count < 50:
+                    return 1
+                elif checkIn_count<200:
+                    return 2
+                else:
+                    return 3
             # 按照timestamp列排序
-            df = self.df.sort_values('datetime', ascending=False)
+            df = self.df.sort_values(['user_id','datetime'])
             # 获取每个组中时间戳最大的两条记录的索引
             idx = df.groupby('user_id').tail(2).index
             # 删除指定索引的行
@@ -173,15 +182,15 @@ def train(args):
 
             pois = list(set(df['POI_id'].to_list()))
             geos = []
-            X = np.zeros((poi_num, (1 + cat_num + 1 + 1)), dtype=np.float32)
+            X = np.zeros((poi_num, (4 + cat_num + 1 + 1)), dtype=np.float32)
             print('node feats making')
             for poi in tqdm(pois):
-                checkin_ount = len(df[df['POI_id'] == poi])
+                checkin_count = len(df[df['POI_id'] == poi])
                 cat = df.loc[df['POI_id'] == poi, 'POI_catid'].iloc[0]
                 longitude = df.loc[df['POI_id'] == poi, 'longitude'].iloc[0]
                 latitude = df.loc[df['POI_id'] == poi, 'latitude'].iloc[0]
-                X[poi][0] = checkin_ount
-                X[poi][cat + 1] = 1
+                X[poi][remap_checkIn_count(checkin_count)] = 1
+                X[poi][cat + 4] = 1
                 X[poi][-2] = longitude
                 X[poi][-1] = latitude
                 geos.append((longitude, latitude))
@@ -292,20 +301,31 @@ def train(args):
         if os.path.exists(os.path.join(os.path.dirname(args.dataset), 'adj.pkl')):
             with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'rb') as f:  # 打开pickle文件
                 adj = pickle.load(f)  # 读取字典
-            with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'rb') as f:  # 打开pickle文件
-                dis = pickle.load(f)  # 读取字典
-            # 将数组保存到文件中
-            X = np.load(os.path.join(os.path.dirname(args.dataset), 'X.npy'))
         else:
             adj = train_dataset.get_adj()
+            with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'wb') as f:
+                pickle.dump(adj, f)  # 把字典写入pickle文件
+
+        if os.path.exists(os.path.join(os.path.dirname(args.dataset), 'dis.pkl')):
+            with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'rb') as f:  # 打开pickle文件
+                dis = pickle.load(f)  # 读取字典
+            X = np.load(os.path.join(os.path.dirname(args.dataset), 'X.npy'))
+        else:
             X, pois, geos = train_dataset.get_X()
             print('space neighbor table making, if you have multi cpus, it will be faster.')
             dis = get_all_nodes_neighbors(pois, geos, args.geo_dis)
-            with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'wb') as f:
-                pickle.dump(adj, f)  # 把字典写入pickle文件
             with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'wb') as f:
                 pickle.dump(dis, f)  # 把字典写入pickle文件
             np.save(os.path.join(os.path.dirname(args.dataset), 'X.npy'), X)
+        average_adj_len = 0
+        for k, v in adj.items():
+            average_adj_len += len(v)
+        average_adj_len = average_adj_len / len(adj)
+        average_dis_len = 0
+        for k, v in dis.items():
+            average_dis_len += len(v)
+        average_dis_len = average_dis_len / len(dis)
+        print(f'adj {len(adj)} {average_adj_len} dis {len(dis)} {average_dis_len}')
     adj_queues = None
     dis_queues = None
     if args.sage:

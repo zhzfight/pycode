@@ -90,7 +90,7 @@ def get_all_nodes_neighbors(nodes,geos,geo_dis):
     dis={}
     for i in range(len(nodes)):
         dis[nodes[i]]=result[i]
-    return result
+    return dis
 
 def adj_list(raw_A,raw_X,geo_dis):
     raw_A=np.copy(raw_A).astype(np.float32)
