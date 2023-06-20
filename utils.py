@@ -73,24 +73,22 @@ def sample_neighbors(graph,nodes,restart_prob,num_walks,adjOrDis):
         res.append(neighbors)
     return res
 
-def get_node_geo_context_neighbors(index, nodes,geos, geo_dis):
+def get_node_geo_context_neighbors(index, nodes,geos, geo_k):
     neighbors = []
     for i in range(len(nodes)):
         if i==index:
             continue
         dis = geod.Inverse(geos[i][1], geos[i][0], geos[index][1], geos[index][0])['s12']
-        if dis<=geo_dis:
-            neighbors.append((nodes[i],dis))
-    return neighbors
+        neighbors.append((nodes[i],dis))
+    sorted_data = sorted(neighbors, key=lambda x: x[1])
+    return sorted_data[:geo_k]
 # 定义一个函数，获取所有节点的邻居列表
-def get_all_nodes_neighbors(nodes,geos,geo_dis):
+def get_all_nodes_neighbors(nodes,geos,geo_k):
     ls=len(nodes)
     result = process_map(get_node_geo_context_neighbors, range(ls), [nodes] * ls,[geos]*ls,
-                         [geo_dis] * ls, max_workers=None, chunksize=1)
+                         [geo_k] * ls, max_workers=None, chunksize=1)
     dis={}
-    for i in range(len(nodes)):
-        if len(result[i])==0:
-            continue
+    for i in range(ls):
         dis[nodes[i]]=result[i]
     return dis
 

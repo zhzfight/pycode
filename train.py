@@ -7,6 +7,7 @@ import pickle
 import zipfile
 from pathlib import Path
 import multiprocessing
+import json
 
 import numpy as np
 import pandas as pd
@@ -29,6 +30,8 @@ from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_
 
 def train(args):
     print(
+        'three mode you can choose,1.poi-sage 2.poi 3.sage\n'
+        'you can set mode through args.mode.\n'
         'if you want to use sage mode, you must ensure tow thing,\n'
         ' first is that you have more than 12,000 available file descriptors. \n'
         'second is that You must ensure that poi_dim is divisible by 3.\n'
@@ -165,16 +168,17 @@ def train(args):
 
         def get_X(self):
             def remap_checkIn_count(checkIn_count):
-                if checkIn_count< 10:
+                if checkIn_count < 10:
                     return 0
                 elif checkIn_count < 50:
                     return 1
-                elif checkIn_count<200:
+                elif checkIn_count < 200:
                     return 2
                 else:
                     return 3
+
             # 按照timestamp列排序
-            df = self.df.sort_values(['user_id','datetime'])
+            df = self.df.sort_values(['user_id', 'datetime'])
             # 获取每个组中时间戳最大的两条记录的索引
             idx = df.groupby('user_id').tail(2).index
             # 删除指定索引的行
@@ -297,7 +301,7 @@ def train(args):
     adj = None
     dis = None
     X = None
-    if args.sage:
+    if args.mode != 'poi':
         if os.path.exists(os.path.join(os.path.dirname(args.dataset), 'adj.pkl')):
             with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'rb') as f:  # 打开pickle文件
                 adj = pickle.load(f)  # 读取字典
@@ -313,7 +317,7 @@ def train(args):
         else:
             X, pois, geos = train_dataset.get_X()
             print('space neighbor table making, if you have multi cpus, it will be faster.')
-            dis = get_all_nodes_neighbors(pois, geos, args.geo_dis)
+            dis = get_all_nodes_neighbors(pois, geos, args.geo_k)
             with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'wb') as f:
                 pickle.dump(dis, f)  # 把字典写入pickle文件
             np.save(os.path.join(os.path.dirname(args.dataset), 'X.npy'), X)
@@ -326,9 +330,12 @@ def train(args):
             average_dis_len += len(v)
         average_dis_len = average_dis_len / len(dis)
         print(f'adj {len(adj)} {average_adj_len} dis {len(dis)} {average_dis_len}')
+        with open('dis.json', 'w') as f:
+            json.dump(dis, f, indent=4)
     adj_queues = None
     dis_queues = None
-    if args.sage:
+    stop_event = None
+    if args.mode != 'poi':
         threshold = 10  # 队列大小阈值
         adj_queues = {node: multiprocessing.Queue() for node in range(poi_num)}  # 创建多个队列
         dis_queues = {node: multiprocessing.Queue() for node in range(poi_num)}  # 创建多个队列
@@ -346,16 +353,16 @@ def train(args):
             dp.start()
 
     # %% ====================== Build Models ======================
-
-    if args.sage:
+    poi_id_embed_model = PoiEmbeddings(poi_num, args.poi_embed_dim)
+    poi_sage_embed_model = None
+    if args.mode != 'poi':
         if isinstance(X, np.ndarray):
             X = torch.from_numpy(X)
         X = X.to(device=args.device, dtype=torch.float)
-        poi_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_embed_dim,
-                                    device=args.device, restart_prob=args.restart_prob, num_walks=args.num_walks,
-                                    dropout=args.dropout, adj_queues=adj_queues, dis_queues=dis_queues)
-    else:
-        poi_embed_model = PoiEmbeddings(poi_num, args.poi_embed_dim)
+        poi_sage_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_embed_dim,
+                                         device=args.device, restart_prob=args.restart_prob, num_walks=args.num_walks,
+                                         dropout=args.dropout, adj_queues=adj_queues, dis_queues=dis_queues)
+
     user_embed_model = UserEmbeddings(user_num, args.user_embed_dim)
 
     # %% Model3: Time Model
@@ -365,7 +372,14 @@ def train(args):
     cat_embed_model = CategoryEmbeddings(cat_num, args.cat_embed_dim)
 
     # %% Model6: Sequence model
-    args.seq_input_embed = args.poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim
+    poi_embed_dim=0
+    if args.mode=='poi-sage':
+        poi_embed_dim=args.poi_sage_dim+args.poi_id_dim
+    elif args.mode=='sage':
+        poi_embed_dim=args.poi_sage_dim
+    else:
+        poi_embed_dim=args.poi_id_dim
+    args.seq_input_embed = poi_embed_dim + args.user_embed_dim + args.time_embed_dim + args.cat_embed_dim
     if args.pure_transformer:
         seq_model = TransformerModel(poi_num,
                                      cat_num,
@@ -384,7 +398,8 @@ def train(args):
                                                  dropout=args.dropout, user_dim=args.user_embed_dim)
 
     # Define overall loss and optimizer
-    optimizer = optim.Adam(params=list(poi_embed_model.parameters()) +
+    optimizer = optim.Adam(params=list(poi_id_embed_model.parameters()) +
+                                  list(poi_sage_embed_model.parameters()) +
                                   list(user_embed_model.parameters()) +
                                   list(time_embed_model.parameters()) +
                                   list(cat_embed_model.parameters()) +
@@ -398,29 +413,44 @@ def train(args):
         optimizer, 'min', verbose=True, factor=args.lr_scheduler_factor)
 
     # %% Tool functions for training
-    def input_traj_to_embeddings(sample, sage, poi_embeddings=None, embedding_index=None):
+    def input_traj_to_embeddings(sample, mode, poi_sage_embeddings=None, embedding_index=None):
         user = sample[0]
         input_seq = [each[0] for each in sample[1]]
         input_seq_cat = [poi2cat[each] for each in input_seq]
         input_seq_time = [each[1] for each in sample[1]]
-        if sage:
-            if embedding_index == None:
-                poi_idxs = input_seq
+        if mode != 'poi':
+            if mode== 'poi-sage':
+                if embedding_index == None:
+                    poi_idxs = input_seq
+                else:
+                    poi_idxs = [embedding_index + idx for idx in range(len(input_seq))]
+                poi_sage_embed = poi_sage_embeddings[poi_idxs]
+                poi_id_embeded = poi_id_embed_model(torch.LongTensor(input_seq).to(args.device))
+                poi_embed=torch.cat((poi_sage_embed,poi_id_embeded),dim=-1)
             else:
-                poi_idxs = [embedding_index + idx for idx in range(len(input_seq))]
-            poiid_embedded = poi_embeddings[poi_idxs]
+                if embedding_index == None:
+                    poi_idxs = input_seq
+                else:
+                    poi_idxs = [embedding_index + idx for idx in range(len(input_seq))]
+                poi_embed = poi_sage_embeddings[poi_idxs]
         else:
-            poiid_embedded = poi_embed_model(torch.LongTensor(input_seq).to(args.device))
-        catid_embedded = cat_embed_model(torch.LongTensor(input_seq_cat).to(args.device))
-        timebin_embeded = time_embed_model(torch.LongTensor(input_seq_time).to(args.device))
-        user_embedded = user_embed_model(torch.LongTensor([user]).to(args.device))
-        user_embedded = user_embedded.repeat(poiid_embedded.shape[0], 1)
-        embedded = torch.cat((poiid_embedded, catid_embedded, timebin_embeded, user_embedded), dim=-1)
+            poi_embed = poi_id_embed_model(torch.LongTensor(input_seq).to(args.device))
+        catid_embed = cat_embed_model(torch.LongTensor(input_seq_cat).to(args.device))
+        timebin_embed = time_embed_model(torch.LongTensor(input_seq_time).to(args.device))
+        user_embed = user_embed_model(torch.LongTensor([user]).to(args.device))
+        user_embed = user_embed.repeat(poi_embed.shape[0], 1)
+        embedded = torch.cat((poi_embed, catid_embed, timebin_embed, user_embed), dim=-1)
 
         return embedded
 
     # %% ====================== Train ======================
-    poi_embed_model = poi_embed_model.to(device=args.device)
+    if args.mode=='poi-sage':
+        poi_sage_embed_model=poi_sage_embed_model.to(device=args.device)
+        poi_id_embed_model=poi_id_embed_model.to(device=args.device)
+    elif args.mode=='sage':
+        poi_sage_embed_model = poi_sage_embed_model.to(device=args.device)
+    elif args.mode=='poi':
+        poi_id_embed_model=poi_id_embed_model.to(device=args.device)
     user_embed_model = user_embed_model.to(device=args.device)
     time_embed_model = time_embed_model.to(device=args.device)
     cat_embed_model = cat_embed_model.to(device=args.device)
@@ -449,7 +479,13 @@ def train(args):
 
     for epoch in range(args.epochs):
         logging.info(f"{'*' * 50}Epoch:{epoch:03d}{'*' * 50}\n")
-        poi_embed_model.train()
+        if args.mode=='poi-sage':
+            poi_sage_embed_model.train()
+            poi_id_embed_model.train()
+        elif args.mode=='sage':
+            poi_sage_embed_model.train()
+        elif args.mode=='poi':
+            poi_id_embed_model.train()
         user_embed_model.train()
         time_embed_model.train()
         cat_embed_model.train()
@@ -479,10 +515,10 @@ def train(args):
 
             poi_embeddings = None
             embedding_index = 0
-            if args.sage:
+            if args.mode != 'poi':
                 pois = [each[0] for sample in batch for each in sample[1]]
-                poi_embed_model.setup(X, adj, dis)
-                poi_embeddings = poi_embed_model(torch.tensor(pois).to(args.device))
+                poi_sage_embed_model.setup(X, adj, dis)
+                poi_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
             # Convert input seq to embeddings
             for sample in batch:
                 batch_user.append(sample[0])
@@ -496,7 +532,7 @@ def train(args):
                 batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
                 batch_label_seqs_w.append(label_seq_w)
-                input_seq_embed = input_traj_to_embeddings(sample, args.sage, poi_embeddings, embedding_index)
+                input_seq_embed = input_traj_to_embeddings(sample, args.mode, poi_embeddings, embedding_index)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
                 embedding_index += len(input_seq_h)
@@ -568,7 +604,13 @@ def train(args):
                              '=' * 100)
 
         # train end --------------------------------------------------------------------------------------------------------
-        poi_embed_model.eval()
+        if args.mode == 'poi-sage':
+            poi_sage_embed_model.eval()
+            poi_id_embed_model.eval()
+        elif args.mode == 'sage':
+            poi_sage_embed_model.eval()
+        elif args.mode == 'poi':
+            poi_id_embed_model.eval()
 
         user_embed_model.eval()
         time_embed_model.eval()
@@ -584,10 +626,10 @@ def train(args):
         val_batches_poi_loss_list = []
         poi_embeddings = None
         embedding_index = None
-        if args.sage:
+        if args.mode != 'poi':
             pois = [n for n in range(poi_num)]
-            poi_embed_model.setup(X, adj, dis)
-            poi_embeddings = poi_embed_model(torch.tensor(pois).to(args.device))
+            poi_sage_embed_model.setup(X, adj, dis)
+            poi_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
         for vb_idx, batch in enumerate(val_loader):
 
             # For padding
@@ -613,7 +655,7 @@ def train(args):
                 batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
                 batch_label_seqs_w.append(label_seq_w)
-                input_seq_embed = input_traj_to_embeddings(sample, args.sage, poi_embeddings, embedding_index)
+                input_seq_embed = input_traj_to_embeddings(sample, args.mode, poi_embeddings, embedding_index)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
 
@@ -762,6 +804,9 @@ def train(args):
             print(f'val_epochs_top20_acc_list={[float(f"{each:.4f}") for each in val_epochs_top20_acc_list]}', file=f)
             print(f'val_epochs_mAP20_list={[float(f"{each:.4f}") for each in val_epochs_mAP20_list]}', file=f)
             print(f'val_epochs_mrr_list={[float(f"{each:.4f}") for each in val_epochs_mrr_list]}', file=f)
+    print('ok! it is over.')
+    if args.mode:
+        stop_event.set()
 
 
 if __name__ == '__main__':

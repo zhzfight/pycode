@@ -26,14 +26,14 @@ def parameter_parser():
                         default='dataset/NYC/NYC.csv',
                         help='dataset path')
 
-    parser.add_argument('--sage',
-                        type=bool,default=True)
+    parser.add_argument('--mode',
+                        type=str,default='poi-sage',)
     parser.add_argument('--pure-transformer',
                         type=bool, default=True)
     parser.add_argument('--cpus',type=int,default=4)
-    parser.add_argument('--geo-dis',
+    parser.add_argument('--geo-k',
                         type=int,
-                        default=300,
+                        default=10,
                         help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,
@@ -45,9 +45,13 @@ def parameter_parser():
                         help='random walk with restart step')
 
     # Model hyper-parameters
-    parser.add_argument('--poi-embed-dim',
+    parser.add_argument('--poi-id-dim',
                         type=int,
-                        default=180,
+                        default=100,
+                        help='POI embedding dimensions')
+    parser.add_argument('--poi-sage-dim',
+                        type=int,
+                        default=120,
                         help='POI embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
@@ -55,7 +59,7 @@ def parameter_parser():
                         help='User embedding dimensions')
     parser.add_argument('--dropout',
                         type=float,
-                        default=0.1,
+                        default=0.3,
                         help='Dropout rate for gru')
 
 
@@ -80,7 +84,7 @@ def parameter_parser():
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
-                        default=20,
+                        default=50,
                         help='Number of epochs to train.')
     parser.add_argument('--lr',
                         type=float,

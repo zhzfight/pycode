@@ -377,6 +377,7 @@ class SageLayer(nn.Module):
         self.W_self.weight.data.uniform_(-initrange, initrange)
         self.W_adj.weight.data.uniform_(-initrange, initrange)
         self.W_dis.weight.data.uniform_(-initrange, initrange)
+        self.WC.weight.data.uniform_(-initrange, initrange)
         self.bias.data.zero_()
 
     def forward(self, nodes):
@@ -423,8 +424,8 @@ class SageLayer(nn.Module):
         self_feats = self.W_self(self_feats)
         self_feats = F.dropout(self_feats, p=self.dropout, training=self.training)
         dis_feats = self.W_dis(dis_feats)
-        feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1) + self.bias
-        feats = self.WC(feats)
+        feats = torch.cat((self_feats, adj_feats, dis_feats), dim=-1)
+        feats = self.WC(feats)+ self.bias
         feats = self.leakyRelu(feats)
         feats = F.normalize(feats, p=2, dim=-1)
 
