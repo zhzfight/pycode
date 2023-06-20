@@ -89,6 +89,8 @@ def get_all_nodes_neighbors(nodes,geos,geo_dis):
                          [geo_dis] * ls, max_workers=None, chunksize=1)
     dis={}
     for i in range(len(nodes)):
+        if len(result[i])==0:
+            continue
         dis[nodes[i]]=result[i]
     return dis
 
