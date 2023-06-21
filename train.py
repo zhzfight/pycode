@@ -411,14 +411,14 @@ def train(args):
         optimizer, 'min', verbose=True, factor=args.lr_scheduler_factor)
 
     # %% Tool functions for training
-    def input_traj_to_embeddings(sample, mode, poi_sage_embeddings=None, embedding_index=None):
+    def input_traj_to_embeddings(sample, mode,train_or_eval,freeze=False, poi_sage_embeddings=None, embedding_index=None):
         user = sample[0]
         input_seq = [each[0] for each in sample[1]]
         input_seq_cat = [poi2cat[each] for each in input_seq]
         input_seq_time = [each[1] for each in sample[1]]
         if mode != 'poi':
             if mode== 'poi-sage':
-                if embedding_index == None:
+                if train_or_eval=='eval' or freeze:
                     poi_idxs = input_seq
                 else:
                     poi_idxs = [embedding_index + idx for idx in range(len(input_seq))]
@@ -426,7 +426,7 @@ def train(args):
                 poi_id_embeded = poi_id_embed_model(torch.LongTensor(input_seq).to(args.device))
                 poi_embed=torch.cat((poi_sage_embed,poi_id_embeded),dim=-1)
             else:
-                if embedding_index == None:
+                if train_or_eval=='eval' or freeze:
                     poi_idxs = input_seq
                 else:
                     poi_idxs = [embedding_index + idx for idx in range(len(input_seq))]
@@ -474,7 +474,8 @@ def train(args):
     val_epochs_poi_loss_list = []
     # For saving ckpt
     max_val_score = -np.inf
-
+    freeze_sage_embeddings=None
+    freeze=False
     for epoch in range(args.epochs):
         logging.info(f"{'*' * 50}Epoch:{epoch:03d}{'*' * 50}\n")
         if args.embed_mode=='poi-sage':
@@ -484,6 +485,9 @@ def train(args):
             poi_sage_embed_model.train()
         elif args.embed_mode=='poi':
             poi_id_embed_model.train()
+        freeze=args.freeze and epoch>23
+
+
         user_embed_model.train()
         time_embed_model.train()
         cat_embed_model.train()
@@ -498,6 +502,15 @@ def train(args):
         train_batches_loss_list = []
         train_batches_poi_loss_list = []
 
+
+        poi_sage_embeddings = None
+        embedding_index = 0
+        if freeze and args.mode!='poi' :
+            for param in poi_sage_embed_model.parameters():
+                param.requires_grad = False
+            pois = [n for n in range(poi_num)]
+            poi_sage_embed_model.setup(X, adj, dis)
+            freeze_sage_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
         # Loop batch
         for b_idx, batch in enumerate(train_loader):
 
@@ -511,12 +524,12 @@ def train(args):
             batch_label_seqs_w = []
             batch_user = []
 
-            poi_embeddings = None
-            embedding_index = 0
-            if args.embed_mode != 'poi':
+            if freeze and args.mode!='poi' :
+                poi_sage_embeddings=freeze_sage_embeddings
+            elif args.embed_mode != 'poi':
                 pois = [each[0] for sample in batch for each in sample[1]]
                 poi_sage_embed_model.setup(X, adj, dis)
-                poi_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
+                poi_sage_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
             # Convert input seq to embeddings
             for sample in batch:
                 batch_user.append(sample[0])
@@ -530,11 +543,11 @@ def train(args):
                 batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
                 batch_label_seqs_w.append(label_seq_w)
-                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, poi_embeddings, embedding_index)
+                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode,'train',freeze=freeze,poi_sage_embeddings= poi_sage_embeddings,embedding_index= embedding_index)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
                 embedding_index += len(input_seq_h)
-
+            embedding_index=0
             # Pad seqs for batch training
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
@@ -622,12 +635,13 @@ def train(args):
         val_batches_mrr_list = []
         val_batches_loss_list = []
         val_batches_poi_loss_list = []
-        poi_embeddings = None
-        embedding_index = None
-        if args.embed_mode != 'poi':
+        poi_sage_embeddings = None
+        if freeze and args.mode != 'poi':
+            poi_sage_embeddings = freeze_sage_embeddings
+        elif args.embed_mode != 'poi':
             pois = [n for n in range(poi_num)]
             poi_sage_embed_model.setup(X, adj, dis)
-            poi_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
+            poi_sage_embeddings = poi_sage_embed_model(torch.tensor(pois).to(args.device))
         for vb_idx, batch in enumerate(val_loader):
 
             # For padding
@@ -653,7 +667,7 @@ def train(args):
                 batch_label_seqs_h.append(label_seq_h)
                 label_seq_w = [each[3] for each in sample[2]]
                 batch_label_seqs_w.append(label_seq_w)
-                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, poi_embeddings, embedding_index)
+                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode,'eval', freeze=freeze,poi_sage_embeddings= poi_sage_embeddings)
                 batch_seq_embeds.append(input_seq_embed)
                 batch_seq_lens.append(len(label_seq))
 

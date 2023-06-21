@@ -45,17 +45,17 @@ def parameter_parser():
                         help='random walk with restart prob')
     parser.add_argument('--num-walks',
                         type=int,
-                        default=5,
+                        default=7,
                         help='random walk with restart step')
 
     # Model hyper-parameters
     parser.add_argument('--poi-id-dim',
                         type=int,
-                        default=100,
+                        default=96,
                         help='POI embedding dimensions')
     parser.add_argument('--poi-sage-dim',
                         type=int,
-                        default=120,
+                        default=48,
                         help='POI embedding dimensions')
     parser.add_argument('--user-embed-dim',
                         type=int,
@@ -98,6 +98,10 @@ def parameter_parser():
                         type=float,
                         default=0.1,
                         help='Learning rate scheduler factor')
+    parser.add_argument('--freeze-sage',
+                        type=bool,
+                        default=False,
+                        help='freeze sage')
     parser.add_argument('--weight_decay',
                         type=float,
                         default=5e-4,
