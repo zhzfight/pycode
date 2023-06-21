@@ -396,12 +396,19 @@ def train(args):
                                                  dropout=args.dropout, user_dim=args.user_embed_dim)
 
     # Define overall loss and optimizer
-    optimizer = optim.Adam(params=list(poi_id_embed_model.parameters()) +
-                                  list(poi_sage_embed_model.parameters()) +
-                                  list(user_embed_model.parameters()) +
-                                  list(time_embed_model.parameters()) +
-                                  list(cat_embed_model.parameters()) +
-                                  list(seq_model.parameters()),
+    if args.mode == 'poi-sage':
+        parameter_list = list(poi_id_embed_model.parameters()) + list(poi_sage_embed_model.parameters()) + \
+                         list(user_embed_model.parameters()) + list(time_embed_model.parameters()) + list(
+            cat_embed_model.parameters()) + list(seq_model.parameters())
+    elif args.mode == 'poi':
+        parameter_list = list(poi_id_embed_model.parameters())  + \
+                         list(user_embed_model.parameters()) + list(time_embed_model.parameters()) + list(
+            cat_embed_model.parameters()) + list(seq_model.parameters())
+    else:
+        parameter_list =  list(poi_sage_embed_model.parameters()) + \
+        list(user_embed_model.parameters()) + list(time_embed_model.parameters()) + list(
+            cat_embed_model.parameters()) + list(seq_model.parameters())
+    optimizer = optim.Adam(params=parameter_list,
                            lr=args.lr,
                            weight_decay=args.weight_decay)
 
@@ -475,7 +482,7 @@ def train(args):
     # For saving ckpt
     max_val_score = -np.inf
     freeze_sage_embeddings=None
-    freeze=False
+    freeze_set=False
     for epoch in range(args.epochs):
         logging.info(f"{'*' * 50}Epoch:{epoch:03d}{'*' * 50}\n")
         if args.embed_mode=='poi-sage':
@@ -485,7 +492,7 @@ def train(args):
             poi_sage_embed_model.train()
         elif args.embed_mode=='poi':
             poi_id_embed_model.train()
-        freeze=args.freeze_sage and epoch>23
+        freeze=args.freeze_sage and freeze_set
 
 
         user_embed_model.train()
@@ -775,7 +782,9 @@ def train(args):
 
         # Learning rate schuduler
         lr_scheduler.step(monitor_loss)
-
+        if epoch_val_top1_acc>0.2:
+            freeze_set=True
+            logging.info("freeze sage embedding")
         # Print epoch results
         logging.info(f"Epoch {epoch}/{args.epochs}\n"
                      f"train_loss:{epoch_train_loss:.4f}, "
