@@ -485,7 +485,7 @@ def train(args):
             poi_sage_embed_model.train()
         elif args.embed_mode=='poi':
             poi_id_embed_model.train()
-        freeze=args.freeze and epoch>23
+        freeze=args.freeze_sage and epoch>23
 
 
         user_embed_model.train()
