@@ -307,7 +307,7 @@ class MeanAggregator(nn.Module):
     Aggregates a node's embeddings using mean of neighbors' embeddings and transform
     """
 
-    def __init__(self, id2feat, device):
+    def __init__(self, id2feat, device,dim):
         """
         features -- function mapping LongTensor of node ids to FloatTensor of feature values.
         cuda -- whether to use GPU
@@ -315,6 +315,7 @@ class MeanAggregator(nn.Module):
         super(MeanAggregator, self).__init__()
         self.id2feat = id2feat
         self.device = device
+        self.W=nn.Linear(dim,dim)
 
     def forward(self, to_neighs):
         """
@@ -337,6 +338,7 @@ class MeanAggregator(nn.Module):
 
         embed_matrix = self.id2feat(
             torch.LongTensor(list(unique_nodes_list)).to(self.device))  # （unique_count, feat_dim)
+        embed_matrix=self.W(embed_matrix)
         to_feats = mask.mm(embed_matrix)  # n * embed_dim
         return to_feats  # n * embed_dim
 
@@ -353,8 +355,8 @@ class SageLayer(nn.Module):
                  id, adj_queues, dis_queues):
         super(SageLayer, self).__init__()
         self.id2feat = id2feat
-        self.dis_agg = MeanAggregator(self.id2feat, device)
-        self.adj_agg = MeanAggregator(self.id2feat, device)
+        self.dis_agg = MeanAggregator(self.id2feat, device,input_dim)
+        self.adj_agg = MeanAggregator(self.id2feat, device,input_dim)
         self.device = device
         self.adj_list = None
         self.dis_list = None
