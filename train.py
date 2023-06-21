@@ -186,7 +186,7 @@ def train(args):
 
             pois = list(set(df['POI_id'].to_list()))
             geos = []
-            X = np.zeros((poi_num, (4 + cat_num + 1 + 1)), dtype=np.float32)
+            X = np.zeros((poi_num, (4 + cat_num)), dtype=np.float32)
             print('node feats making')
             for poi in tqdm(pois):
                 checkin_count = len(df[df['POI_id'] == poi])
@@ -195,8 +195,6 @@ def train(args):
                 latitude = df.loc[df['POI_id'] == poi, 'latitude'].iloc[0]
                 X[poi][remap_checkIn_count(checkin_count)] = 1
                 X[poi][cat + 4] = 1
-                X[poi][-2] = longitude
-                X[poi][-1] = latitude
                 geos.append((longitude, latitude))
             return X, pois, geos
 
@@ -317,7 +315,7 @@ def train(args):
         else:
             X, pois, geos = train_dataset.get_X()
             print('space neighbor table making, if you have multi cpus, it will be faster.')
-            dis = get_all_nodes_neighbors(pois, geos, args.geo_k)
+            dis = get_all_nodes_neighbors(pois, geos, args.geo_k,args.geo_dis)
             with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'wb') as f:
                 pickle.dump(dis, f)  # 把字典写入pickle文件
             np.save(os.path.join(os.path.dirname(args.dataset), 'X.npy'), X)

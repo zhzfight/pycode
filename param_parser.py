@@ -35,6 +35,10 @@ def parameter_parser():
                         type=int,
                         default=10,
                         help='geo distance less than geo_dis regarded as context poi')
+    parser.add_argument('--geo-dis',
+                        type=int,
+                        default=300,
+                        help='geo distance less than geo_dis regarded as context poi')
     parser.add_argument('--restart-prob',
                         type=float,
                         default=0.5,
