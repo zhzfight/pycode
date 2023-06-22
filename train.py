@@ -342,8 +342,8 @@ def train(args):
                                      matrix in label_seq_h_matrices]
         label_seq_w_padded_matrices = [F.pad(matrix, (0, max_size - matrix.shape[0], 0, max_size - matrix.shape[1])) for
                                      matrix in label_seq_w_matrices]
-        return zip(users, input_seqs, label_seqs, input_seq_h_padded_matrices, \
-            input_seq_w_padded_matrices, label_seq_h_padded_matrices, label_seq_w_padded_matrices)
+        return list(zip(users, input_seqs, label_seqs, input_seq_h_padded_matrices, \
+            input_seq_w_padded_matrices, label_seq_h_padded_matrices, label_seq_w_padded_matrices))
 
     # %% ====================== Define dataloader ======================
     print('Prepare dataloader...')

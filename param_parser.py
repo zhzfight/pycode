@@ -29,7 +29,7 @@ def parameter_parser():
     parser.add_argument('--embed-mode',
                         type=str,default='poi',)
     parser.add_argument('--pure-transformer',
-                        type=bool, default=True)
+                        type=bool, default=False)
     parser.add_argument('--cpus',type=int,default=4)
     parser.add_argument('--geo-k',
                         type=int,
