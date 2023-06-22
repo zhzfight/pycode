@@ -474,7 +474,8 @@ class TransformerModel(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w,batch_user_embedding):
+    def forward(self, src, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
+                                   batch_label_w_matrices, batch_user_embedding):
         src_mask=self.generate_square_subsequent_mask(src.shape[1]).to(self.device)
         src = self.pos_encoder(src)
         x = self.transformer_encoder(src, src_mask)
