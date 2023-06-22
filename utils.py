@@ -14,6 +14,12 @@ from geographiclib.geodesic import Geodesic
 from tqdm.contrib.concurrent import process_map
 
 geod = Geodesic.WGS84
+def compute_relative_time_matrix(t1, t2,remainder):
+    t1 = np.array(t1)
+    t2 = np.array(t2)
+    matrix = (t1[:, None] - t2) % remainder + 1
+    return np.tril(matrix)
+
 def split_list(a_list, x):
     # 计算每份的长度和余数
     if x > len(a_list):

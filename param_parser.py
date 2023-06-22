@@ -27,7 +27,7 @@ def parameter_parser():
                         help='dataset path')
 
     parser.add_argument('--embed-mode',
-                        type=str,default='poi-sage',)
+                        type=str,default='poi',)
     parser.add_argument('--pure-transformer',
                         type=bool, default=True)
     parser.add_argument('--cpus',type=int,default=4)

@@ -111,27 +111,12 @@ class TimeIntervalAwareTransformer(nn.Module):
         self.decoder_poi.bias.data.zero_()
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src, batch_seq_lens, batch_input_seqs_h,batch_input_seqs_w,batch_label_seqs_h,batch_label_seqs_w,batch_user_embedding):
-        hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-        dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-
-        label_hourInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-        label_dayInterval=torch.zeros((src.shape[0],src.shape[1],src.shape[1]),dtype=torch.long).to(self.device)
-        for i in range(src.shape[0]):
-            for j in range(batch_seq_lens[i]):
-                for k in range(j+1):
-                    hourInterval[i][j][k]=(batch_input_seqs_h[i][j]-batch_input_seqs_h[i][k])%24+1
-                    dayInterval[i][j][k]=(batch_input_seqs_w[i][j]-batch_input_seqs_w[i][k])%7+1
-
-                    label_hourInterval[i][j][k] = (batch_label_seqs_h[i][j]-batch_input_seqs_h[i][k])%24 + 1
-                    label_dayInterval[i][j][k] = (batch_label_seqs_w[i][j]-batch_input_seqs_w[i][k])%7 + 1
-
-
-        hourInterval_embedding=self.hour_embedding(hourInterval)
-        dayInterval_embedding=self.day_embedding(dayInterval)
-
-        label_hourInterval_embedding=self.label_hour_embedding(label_hourInterval)
-        label_dayInterval_embedding=self.label_day_embedding(label_dayInterval)
+    def forward(self, src, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
+                                   batch_label_w_matrices, batch_user_embedding):
+        hourInterval_embedding=self.hour_embedding(batch_input_h_matrices)
+        dayInterval_embedding=self.day_embedding(batch_input_w_matrices)
+        label_hourInterval_embedding=self.label_hour_embedding(batch_label_h_matrices)
+        label_dayInterval_embedding=self.label_day_embedding(batch_label_w_matrices)
 
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
@@ -170,7 +155,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         ffn_output=self.feedforward1(x)
         ffn_output=self.norm12(x+ffn_output)
 
-        '''
+
         src=ffn_output
 
         Q = self.W2_Q(src)
@@ -195,7 +180,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         x = self.norm21(x + src)
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
-        '''
+
 
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
