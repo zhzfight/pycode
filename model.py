@@ -102,7 +102,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         self.rotary_emb_attn = RotaryEmbedding(dim=nhid)
         self.rotary_emb_decode=RotaryEmbedding(dim=nhid)
         self.u_proj=nn.Linear(user_dim,nhid)
-
+        self.pos_encoder = PositionalEncoding(nhid, dropout)
 
 
 
@@ -115,9 +115,8 @@ class TimeIntervalAwareTransformer(nn.Module):
                                    batch_label_w_matrices, batch_user_embedding):
         hourInterval_embedding=self.hour_embedding(batch_input_h_matrices)
         dayInterval_embedding=self.day_embedding(batch_input_w_matrices)
-        label_hourInterval_embedding=self.label_hour_embedding(batch_label_h_matrices)
-        label_dayInterval_embedding=self.label_day_embedding(batch_label_w_matrices)
-
+        label_hourInterval_embedding=self.hour_embedding(batch_label_h_matrices)
+        label_dayInterval_embedding=self.day_embedding(batch_label_w_matrices)
         # mask attn
         attn_mask = ~torch.tril(torch.ones((src.shape[1], src.shape[1]), dtype=torch.bool, device=self.device))
         time_mask = torch.zeros((src.shape[0], src.shape[1]), dtype=torch.bool, device=self.device)
@@ -127,7 +126,8 @@ class TimeIntervalAwareTransformer(nn.Module):
         attn_mask = attn_mask.unsqueeze(0).expand(src.shape[0], -1, -1)
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, src.shape[1])
 
-        src=self.rotary_emb_attn.rotate_queries_or_keys(src)
+        src=self.pos_encoder(src)
+        #src=self.rotary_emb_attn.rotate_queries_or_keys(src)
         Q=self.W1_Q(src)
         K=self.W1_K(src)
         V=self.W1_V(src)
@@ -181,10 +181,8 @@ class TimeIntervalAwareTransformer(nn.Module):
         ffn_output = self.feedforward2(x)
         ffn_output = self.norm22(x + ffn_output)
 
-
         #attn_mask=attn_mask.unsqueeze(-1).expand(-1,-1,-1,ffn_output.shape[-1])
         ffn_output=ffn_output.unsqueeze(2).repeat(1,1,ffn_output.shape[1],1).transpose(2,1)
-        ffn_output=self.rotary_emb_decode.rotate_queries_or_keys(ffn_output)
         ffn_output=torch.add(ffn_output,label_hourInterval_embedding)
         ffn_output=torch.add(ffn_output,label_dayInterval_embedding)
         '''
@@ -192,6 +190,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         pooled_poi=torch.zeros(decoder_output_poi.shape[0],decoder_output_poi.shape[1],decoder_output_poi.shape[3]).to(self.device)
         for i in range(decoder_output_poi.shape[1]):
             pooled_poi[:,i]=torch.mean(decoder_output_poi[:,i,:i+1],dim=1)
+
         '''
         batch_user_embedding = self.u_proj(batch_user_embedding)
         batch_user_embedding = batch_user_embedding.unsqueeze(1).repeat(1, src.shape[1], 1)
@@ -203,6 +202,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         # 根据注意力权重对偏好矩阵进行聚合
         aggregated_preference = torch.sum(ffn_output * attention_weights.unsqueeze(-1), dim=2)
         pooled_poi = self.decoder_poi(aggregated_preference)
+
         return pooled_poi
 
 

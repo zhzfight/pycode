@@ -84,13 +84,12 @@ def train(args):
     # %% ====================== Define Dataset ======================
 
     class produceSampleProcess(multiprocessing.Process):
-        def __init__(self, tasks, queues, adj_list, restart_prob, num_walks, threshold, adjOrdis, stop_event, id):
+        def __init__(self, tasks, queues, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id):
             super().__init__()
             self.tasks = tasks
             self.queues = queues
             self.threshold = threshold
             self.adjOrdis = adjOrdis
-            self.stop_event = stop_event
             self.id = id
             self.adj_list = adj_list
             self.restart_prob = restart_prob
@@ -112,9 +111,6 @@ def train(args):
                         if self.missing_dict[node] > 2:
                             self.missing_dict[node] = 0
                             self.count_dict[node] += self.threshold
-                if self.stop_event.is_set():
-                    break
-            print(self.adjOrdis, self.id, 'quit')
 
     pois_in_train = set()
 
@@ -330,7 +326,7 @@ def train(args):
                 self.input_seq_w_timeMatrixes[index], self.label_seq_h_timeMatrixes[index],
                 self.label_seq_w_timeMatrixes[index])
 
-    def my_collate_fn(batch):
+    def time_collate_fn(batch):
         users, input_seqs, label_seqs, input_seq_h_matrices, input_seq_w_matrices, \
             label_seq_h_matrices, label_seq_w_matrices = zip(*batch)
         max_size = max([len(input_seq) for input_seq in input_seqs])
@@ -344,7 +340,9 @@ def train(args):
                                      matrix in label_seq_w_matrices]
         return list(zip(users, input_seqs, label_seqs, input_seq_h_padded_matrices, \
             input_seq_w_padded_matrices, label_seq_h_padded_matrices, label_seq_w_padded_matrices))
-
+    collate_fn=lambda x:x
+    if not args.pure_transformer:
+        collate_fn=time_collate_fn
     # %% ====================== Define dataloader ======================
     print('Prepare dataloader...')
     train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'))
@@ -355,40 +353,42 @@ def train(args):
                               batch_size=args.batch,
                               shuffle=True, drop_last=False,
                               pin_memory=True, num_workers=args.workers,
-                              collate_fn=my_collate_fn)
+                              collate_fn=collate_fn)
     val_loader = DataLoader(val_dataset,
                             batch_size=args.batch,
                             shuffle=False, drop_last=False,
                             pin_memory=True, num_workers=args.workers,
-                            collate_fn=my_collate_fn)
+                            collate_fn=collate_fn)
     test_loader = DataLoader(val_dataset,
                              batch_size=args.batch,
                              shuffle=False, drop_last=False,
                              pin_memory=True, num_workers=args.workers,
-                             collate_fn=my_collate_fn)
+                             collate_fn=collate_fn)
     adj = None
     dis = None
     X = None
     if args.embed_mode != 'poi':
-        if os.path.exists(os.path.join(os.path.dirname(args.dataset), 'adj.pkl')):
-            with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'rb') as f:  # 打开pickle文件
+        basename = os.path.basename(args.dataset)
+        prefix, _ = os.path.splitext(basename)
+        if os.path.exists(os.path.join(os.path.dirname(args.dataset), prefix+'_adj.pkl')):
+            with open(os.path.join(os.path.dirname(args.dataset), prefix+'_adj.pkl'), 'rb') as f:  # 打开pickle文件
                 adj = pickle.load(f)  # 读取字典
         else:
             adj = train_dataset.get_adj()
-            with open(os.path.join(os.path.dirname(args.dataset), 'adj.pkl'), 'wb') as f:
+            with open(os.path.join(os.path.dirname(args.dataset), prefix+'_adj.pkl'), 'wb') as f:
                 pickle.dump(adj, f)  # 把字典写入pickle文件
 
-        if os.path.exists(os.path.join(os.path.dirname(args.dataset), 'dis.pkl')):
-            with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'rb') as f:  # 打开pickle文件
+        if os.path.exists(os.path.join(os.path.dirname(args.dataset), prefix+'_dis.pkl')):
+            with open(os.path.join(os.path.dirname(args.dataset), prefix+'_dis.pkl'), 'rb') as f:  # 打开pickle文件
                 dis = pickle.load(f)  # 读取字典
-            X = np.load(os.path.join(os.path.dirname(args.dataset), 'X.npy'))
+            X = np.load(os.path.join(os.path.dirname(args.dataset), prefix+'_X.npy'))
         else:
             X, pois, geos = train_dataset.get_X()
             print('space neighbor table making, if you have multi cpus, it will be faster.')
             dis = get_all_nodes_neighbors(pois, geos, args.geo_k, args.geo_dis)
-            with open(os.path.join(os.path.dirname(args.dataset), 'dis.pkl'), 'wb') as f:
+            with open(os.path.join(os.path.dirname(args.dataset), prefix+'_dis.pkl'), 'wb') as f:
                 pickle.dump(dis, f)  # 把字典写入pickle文件
-            np.save(os.path.join(os.path.dirname(args.dataset), 'X.npy'), X)
+            np.save(os.path.join(os.path.dirname(args.dataset), prefix+'_X.npy'), X)
         average_adj_len = 0
         for k, v in adj.items():
             average_adj_len += len(v)
@@ -400,9 +400,10 @@ def train(args):
         print(f'adj {len(adj)} {average_adj_len} dis {len(dis)} {average_dis_len}')
         with open('dis.json', 'w') as f:
             json.dump(dis, f, indent=4)
+    exit(0)
     adj_queues = None
     dis_queues = None
-    stop_event = None
+    process_list=[]
     if args.embed_mode != 'poi':
         threshold = 10  # 队列大小阈值
         adj_queues = {node: multiprocessing.Queue() for node in range(poi_num)}  # 创建多个队列
@@ -413,12 +414,14 @@ def train(args):
         for idx, task in enumerate(tasks):
             ap = produceSampleProcess(tasks=task, queues=adj_queues, adj_list=adj, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='adj', stop_event=stop_event, id=idx)
+                                      threshold=threshold, adjOrdis='adj',  id=idx)
             ap.start()
+            process_list.append(ap)
             dp = produceSampleProcess(tasks=task, queues=dis_queues, adj_list=dis, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='dis', stop_event=stop_event, id=idx)
+                                      threshold=threshold, adjOrdis='dis',  id=idx)
             dp.start()
+            process_list.append(dp)
 
     # %% ====================== Build Models ======================
     poi_id_embed_model = PoiEmbeddings(poi_num, args.poi_id_dim)
@@ -902,8 +905,9 @@ def train(args):
             print(f'val_epochs_mAP20_list={[float(f"{each:.4f}") for each in val_epochs_mAP20_list]}', file=f)
             print(f'val_epochs_mrr_list={[float(f"{each:.4f}") for each in val_epochs_mrr_list]}', file=f)
     print('ok! it is over.')
-    if args.embed_mode:
-        stop_event.set()
+    if args.embed_mode!='poi':
+        for p in process_list:
+            p.terminate()
 
 
 if __name__ == '__main__':
