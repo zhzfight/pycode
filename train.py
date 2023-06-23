@@ -86,10 +86,11 @@ def train(args):
     # %% ====================== Define Dataset ======================
 
     class produceSampleProcess(multiprocessing.Process):
-        def __init__(self, tasks, node_dicts, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id,primary):
+        def __init__(self, tasks, node_dicts, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id,primary,locks):
             super().__init__()
             self.tasks = tasks
             self.node_dicts = node_dicts
+            self.locks=locks
             self.threshold = threshold
             self.adjOrdis = adjOrdis
             self.id = id
@@ -415,27 +416,30 @@ def train(args):
     adj_dicts = None
     dis_dicts = None
     manager=None
+    locks=None
     threshold = 10  # 队列大小阈值
     primary = 20
     process_list=[]
     if args.embed_mode != 'poi':
         manager=multiprocessing.Manager()
         num_dict=math.ceil(poi_num/primary)
-        adj_dicts=[]
-        dis_dicts=[]
+        adj_dicts=manager.list([multiprocessing.dict() for _ in range(num_dict)])
+        dis_dicts=manager.list([multiprocessing.dict() for _ in range(num_dict)])
+        locks=manager.list([multiprocessing.Lock() for _ in range(num_dict)])
         for _ in range(num_dict):
             adj_dicts.append(manager.dict())
             dis_dicts.append(manager.dict())
+            locks.append(multiprocessing.Lock())
         tasks = split_list([i for i in range(poi_num)], int(args.cpus / 2))
         for idx, task in enumerate(tasks):
             ap = produceSampleProcess(tasks=task, node_dicts=adj_dicts, adj_list=adj, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='adj',  id=idx,primary=primary)
+                                      threshold=threshold, adjOrdis='adj',  id=idx,primary=primary,locks=locks)
             ap.start()
             process_list.append(ap)
             dp = produceSampleProcess(tasks=task, node_dicts=dis_dicts, adj_list=dis, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='dis',  id=idx,primary=primary)
+                                      threshold=threshold, adjOrdis='dis',  id=idx,primary=primary,locks=locks)
             dp.start()
             process_list.append(dp)
 
