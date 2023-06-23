@@ -33,11 +33,17 @@ import threading
 
 def train(args):
     print(
-        'three mode you can choose,1.poi-sage 2.poi 3.sage\n'
-        'you can set mode through args.embed_mode.\n'
-        'if you want to use sage mode, you must ensure tow thing,\n'
-        ' first is that you have more than 12,000 available file descriptors. \n'
-        'second is that You must ensure that poi_dim is divisible by 3.\n'
+        "three mode you can choose,1.poi-sage 2.poi 3.sage\n"
+        "you can set mode through args.embed_mode.\n"
+        "three dataset you can choose in this code, the first is NYC used in GETNext,"
+        "But I think this is an overprocessed dataset. the second and third is NYC launched by Yang DingQi."
+        "this two dataset are very big, and For these two datasets, I didn’t do too much extra preprocessing."
+        "If you use the Sage mode, because GraphSAGE requires sampling, this will cause the program to run very slowly. "
+        "But this is because I used Manager().Queue in the producer-consumer model for inter-process communication, "
+        "and its performance is far inferior to that of multiprocessing.Queue. Because my implementation is not very "
+        "elegant, it causes multiprocessing.Queue to require many threads, which results in not enough threads when "
+        "there are many POIs. If the number of POIs is relatively small, the solution using multiprocessing.Queue has "
+        "a flying speed. If you need this, you can contact me."
         'have a nice day.')
     args.save_dir = increment_path(Path(args.project) / args.name, exist_ok=args.exist_ok, sep='-')
     if not os.path.exists(args.save_dir): os.makedirs(args.save_dir)
@@ -86,11 +92,10 @@ def train(args):
     # %% ====================== Define Dataset ======================
 
     class produceSampleProcess(multiprocessing.Process):
-        def __init__(self, tasks, node_dicts, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id,locks):
+        def __init__(self, tasks, node_dicts, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id):
             super().__init__()
             self.tasks = tasks
             self.node_dicts = node_dicts
-            self.locks=locks
             self.threshold = threshold
             self.adjOrdis = adjOrdis
             self.id = id
@@ -98,24 +103,21 @@ def train(args):
             self.restart_prob = restart_prob
             self.num_walks = num_walks
             self.count_dict = {key: threshold for key in tasks}
-            self.missing_dict = {key: 0 for key in tasks}
 
         def run(self):
             while True:
                 for node in self.tasks:
-                    self.locks[node].acquire()
-                    q= len(self.node_dicts[node])
-                    if q < self.threshold / 2:
-                        for _ in range(self.count_dict[node] - q):
+                    if self.node_dicts[node].empty():
+                        for _ in range(self.count_dict[node]):
                             random_walk = random_walk_with_restart(self.adj_list, node, self.restart_prob,
                                                                    self.num_walks,
                                                                    self.adjOrdis)
-                            self.node_dicts[node].append(random_walk)
-                        self.missing_dict[node] += 1
-                        if self.missing_dict[node] > 2:
-                            self.missing_dict[node] = 0
-                            self.count_dict[node] += self.threshold
-                    self.locks[node].release()
+                            self.node_dicts[node].put(random_walk)
+                        if self.count_dict[node]+threshold>2000:
+                            self.count_dict[node]=2000
+                        else:
+                            self.count_dict[node]+=threshold
+
 
     pois_in_train = set()
 
@@ -403,32 +405,27 @@ def train(args):
             average_dis_len += len(v)
         average_dis_len = average_dis_len / len(dis)
         print(f'adj {len(adj)} {average_adj_len} dis {len(dis)} {average_dis_len}')
-        with open('dis.json', 'w') as f:
-            json.dump(dis, f, indent=4)
     adj_dicts = None
     dis_dicts = None
     manager=None
-    adj_locks=None
-    dis_locks=None
+
     threshold = 10  # 队列大小阈值
-    primary = 20
+    primary = 200
     process_list=[]
     if args.embed_mode != 'poi':
         manager=multiprocessing.Manager()
-        adj_dicts=[manager.list([])]*poi_num
-        dis_dicts=[manager.list([])]*poi_num
-        adj_locks=[multiprocessing.Lock()]*poi_num
-        dis_locks=[multiprocessing.Lock()]*poi_num
+        adj_dicts=[manager.Queue()]*poi_num
+        dis_dicts=[manager.Queue()]*poi_num
         tasks = split_list([i for i in range(poi_num)], int(args.cpus / 2))
         for idx, task in enumerate(tasks):
             ap = produceSampleProcess(tasks=task, node_dicts=adj_dicts, adj_list=adj, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='adj',  id=idx,locks=adj_locks)
+                                      threshold=threshold, adjOrdis='adj',  id=idx)
             ap.start()
             process_list.append(ap)
             dp = produceSampleProcess(tasks=task, node_dicts=dis_dicts, adj_list=dis, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='dis',  id=idx,locks=dis_locks)
+                                      threshold=threshold, adjOrdis='dis',  id=idx)
             dp.start()
             process_list.append(dp)
 
@@ -441,7 +438,7 @@ def train(args):
         X = X.to(device=args.device, dtype=torch.float)
         poi_sage_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_sage_dim,
                                          device=args.device, restart_prob=args.restart_prob, num_walks=args.num_walks,
-                                         dropout=args.dropout, adj_dicts=adj_dicts, dis_dicts=dis_dicts,adj_locks=adj_locks,dis_locks=dis_locks)
+                                         dropout=args.dropout, adj_dicts=adj_dicts, dis_dicts=dis_dicts)
 
     user_embed_model = UserEmbeddings(user_num, args.user_embed_dim)
 
