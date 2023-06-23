@@ -23,11 +23,11 @@ def parameter_parser():
                         help='')
     parser.add_argument('--dataset',
                         type=str,
-                        default='dataset/dataset_tsmc2014/TKY.csv',
+                        default='dataset/NYC/NYC.csv',
                         help='dataset path')
 
     parser.add_argument('--embed-mode',
-                        type=str,default='poi-sage',)
+                        type=str,default='sage',)
     parser.add_argument('--pure-transformer',
                         type=bool, default=False)
     parser.add_argument('--cpus',type=int,default=4)
