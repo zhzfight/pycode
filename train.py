@@ -400,7 +400,6 @@ def train(args):
         print(f'adj {len(adj)} {average_adj_len} dis {len(dis)} {average_dis_len}')
         with open('dis.json', 'w') as f:
             json.dump(dis, f, indent=4)
-    exit(0)
     adj_queues = None
     dis_queues = None
     process_list=[]
@@ -633,10 +632,11 @@ def train(args):
 
 
             # Feedforward
-            batch_input_h_matrices=torch.stack(batch_input_h_matrices).to(args.device)
-            batch_input_w_matrices = torch.stack(batch_input_w_matrices).to(args.device)
-            batch_label_h_matrices = torch.stack(batch_label_h_matrices).to(args.device)
-            batch_label_w_matrices = torch.stack(batch_label_w_matrices).to(args.device)
+            if not args.pure_transformer:
+                batch_input_h_matrices=torch.stack(batch_input_h_matrices).to(args.device)
+                batch_input_w_matrices = torch.stack(batch_input_w_matrices).to(args.device)
+                batch_label_h_matrices = torch.stack(batch_label_h_matrices).to(args.device)
+                batch_label_w_matrices = torch.stack(batch_label_w_matrices).to(args.device)
 
             x = batch_padded.to(device=args.device)
             y_poi = label_padded_poi.to(device=args.device)
