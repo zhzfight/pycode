@@ -23,7 +23,7 @@ def parameter_parser():
                         help='')
     parser.add_argument('--dataset',
                         type=str,
-                        default='dataset/dataset_tsmc2014/NYC.csv',
+                        default='dataset/dataset_tsmc2014/TKY.csv',
                         help='dataset path')
 
     parser.add_argument('--embed-mode',
