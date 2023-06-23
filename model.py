@@ -337,7 +337,7 @@ class SageLayer(nn.Module):
     """
 
     def __init__(self, id2feat, restart_prob, num_walks, input_dim, output_dim, device, dropout,
-                 id, adj_queues, dis_queues):
+                 id, adj_dict, dis_dict):
         super(SageLayer, self).__init__()
         self.id2feat = id2feat
         self.dis_agg = MeanAggregator(self.id2feat, device,input_dim)
@@ -349,8 +349,8 @@ class SageLayer(nn.Module):
         self.num_walks = num_walks
         self.leakyRelu = nn.LeakyReLU(0.2)
         self.dropout = dropout
-        self.adj_queues = adj_queues
-        self.dis_queues = dis_queues
+        self.adj_dict = adj_dict
+        self.dis_dict = dis_dict
         self.id = id
         self.W_self = nn.Linear(input_dim, int(output_dim / 3), bias=False)
         self.W_adj = nn.Linear(input_dim, int(output_dim / 3), bias=False)
@@ -381,15 +381,15 @@ class SageLayer(nn.Module):
         missing_adj_idx = []
         missing_dis_idx = []
         for idx, node in enumerate(unique_nodes_list):
-            try:
-                random_walk = self.adj_queues[node].get_nowait()
+            if node in self.adj_dict and len(self.adj_dict[node]) > 0:
+                random_walk = self.adj_dict[node].pop(0)
                 adj_neighbors[idx] = random_walk
-            except queue.Empty:
+            else:
                 missing_adj_idx.append(idx)
-            try:
-                random_walk = self.dis_queues[node].get_nowait()
+            if node in self.dis_dict and len(self.dis_dict[node]) > 0:
+                random_walk = self.dis_dict[node].pop(0)
                 dis_neighbors[idx] = random_walk
-            except queue.Empty:
+            else:
                 missing_dis_idx.append(idx)
 
         if len(missing_adj_idx) != 0:
@@ -427,19 +427,19 @@ class SageLayer(nn.Module):
 
 
 class GraphSAGE(nn.Module):
-    def __init__(self, input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_queues, dis_queues):
+    def __init__(self, input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_dict, dis_dict):
         super(GraphSAGE, self).__init__()
         self.id2node = None
         self.device = device
 
         self.layer2 = SageLayer(id2feat=lambda nodes: self.id2node[nodes],
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=input_dim,
-                                output_dim=embed_dim, device=device, dropout=dropout, id=2, adj_queues=adj_queues,
-                                dis_queues=dis_queues)
+                                output_dim=embed_dim, device=device, dropout=dropout, id=2, adj_dict=adj_dict,
+                                dis_dict=dis_dict)
         self.layer1 = SageLayer(id2feat=lambda nodes: self.layer2(nodes),
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
-                                output_dim=embed_dim, device=device, dropout=dropout, id=1, adj_queues=adj_queues,
-                                dis_queues=dis_queues)
+                                output_dim=embed_dim, device=device, dropout=dropout, id=1, adj_dict=adj_dict,
+                                dis_dict=dis_dict)
 
     def forward(self, nodes):
         feats = self.layer1(nodes)
