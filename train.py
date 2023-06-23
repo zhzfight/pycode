@@ -1,6 +1,7 @@
 import collections
 import logging
 import logging
+import math
 import os
 import pathlib
 import pickle
@@ -85,31 +86,33 @@ def train(args):
     # %% ====================== Define Dataset ======================
 
     class produceSampleProcess(multiprocessing.Process):
-        def __init__(self, tasks, node_dict, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id):
+        def __init__(self, tasks, node_dicts, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id,primary):
             super().__init__()
             self.tasks = tasks
-            self.node_dict = node_dict
+            self.node_dicts = node_dicts
             self.threshold = threshold
             self.adjOrdis = adjOrdis
             self.id = id
             self.adj_list = adj_list
             self.restart_prob = restart_prob
             self.num_walks = num_walks
+            self.primary=primary
             self.count_dict = {key: threshold for key in tasks}
             self.missing_dict = {key: 0 for key in tasks}
 
         def run(self):
             while True:
                 for node in self.tasks:
-                    if node not in self.node_dict:
-                        self.node_dict[node]=[]
+                    primary_idx=node/self.primary
+                    if node not in self.node_dicts[primary_idx]:
+                        self.node_dicts[primary_idx][node]=[]
                         for _ in range(self.threshold):
                             random_walk = random_walk_with_restart(self.adj_list, node, self.restart_prob,
                                                                    self.num_walks,
                                                                    self.adjOrdis)
-                            self.node_dict[node].append(random_walk)
+                            self.node_dicts[primary_idx][node].append(random_walk)
                         continue
-                    walk_list = self.node_dict[node]
+                    walk_list = self.node_dicts[primary_idx][node]
                     if len(walk_list) < self.threshold / 2:
                         for _ in range(self.count_dict[node] - len(walk_list)):
                             random_walk = random_walk_with_restart(self.adj_list, node, self.restart_prob,
@@ -409,26 +412,30 @@ def train(args):
         print(f'adj {len(adj)} {average_adj_len} dis {len(dis)} {average_dis_len}')
         with open('dis.json', 'w') as f:
             json.dump(dis, f, indent=4)
-    adj_dict = None
-    dis_dict = None
+    adj_dicts = None
+    dis_dicts = None
     manager=None
+    threshold = 10  # 队列大小阈值
+    primary = 20
     process_list=[]
     if args.embed_mode != 'poi':
         manager=multiprocessing.Manager()
-        adj_dict = manager.dict()
-        dis_dict=manager.dict()
-        threshold = 10  # 队列大小阈值
+        num_dict=math.ceil(poi_num/primary)
+        adj_dicts=[]
+        dis_dicts=[]
+        for _ in range(num_dict):
+            adj_dicts.append(manager.dict())
+            dis_dicts.append(manager.dict())
         tasks = split_list([i for i in range(poi_num)], int(args.cpus / 2))
-
         for idx, task in enumerate(tasks):
-            ap = produceSampleProcess(tasks=task, node_dict=adj_dict, adj_list=adj, restart_prob=args.restart_prob,
+            ap = produceSampleProcess(tasks=task, node_dicts=adj_dicts, adj_list=adj, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='adj',  id=idx)
+                                      threshold=threshold, adjOrdis='adj',  id=idx,primary=primary)
             ap.start()
             process_list.append(ap)
-            dp = produceSampleProcess(tasks=task, node_dict=dis_dict, adj_list=dis, restart_prob=args.restart_prob,
+            dp = produceSampleProcess(tasks=task, node_dicts=dis_dicts, adj_list=dis, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='dis',  id=idx)
+                                      threshold=threshold, adjOrdis='dis',  id=idx,primary=primary)
             dp.start()
             process_list.append(dp)
 
@@ -441,7 +448,7 @@ def train(args):
         X = X.to(device=args.device, dtype=torch.float)
         poi_sage_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_sage_dim,
                                          device=args.device, restart_prob=args.restart_prob, num_walks=args.num_walks,
-                                         dropout=args.dropout, adj_dict=adj_dict, dis_dict=dis_dict)
+                                         dropout=args.dropout, adj_dicts=adj_dicts, dis_dicts=dis_dicts,primary=primary)
 
     user_embed_model = UserEmbeddings(user_num, args.user_embed_dim)
 
