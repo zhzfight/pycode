@@ -757,10 +757,11 @@ def train(args):
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
             batch_user_embedding = user_embed_model(torch.LongTensor(batch_user).to(args.device))
-            batch_input_h_matrices = torch.stack(batch_input_h_matrices).to(args.device)
-            batch_input_w_matrices = torch.stack(batch_input_w_matrices).to(args.device)
-            batch_label_h_matrices = torch.stack(batch_label_h_matrices).to(args.device)
-            batch_label_w_matrices = torch.stack(batch_label_w_matrices).to(args.device)
+            if not args.pure_transformer:
+                batch_input_h_matrices = torch.stack(batch_input_h_matrices).to(args.device)
+                batch_input_w_matrices = torch.stack(batch_input_w_matrices).to(args.device)
+                batch_label_h_matrices = torch.stack(batch_label_h_matrices).to(args.device)
+                batch_label_w_matrices = torch.stack(batch_label_w_matrices).to(args.device)
             # Feedforward
             x = batch_padded.to(device=args.device)
             y_poi = label_padded_poi.to(device=args.device)

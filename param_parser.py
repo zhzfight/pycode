@@ -51,7 +51,7 @@ def parameter_parser():
     # Model hyper-parameters
     parser.add_argument('--poi-id-dim',
                         type=int,
-                        default=96,
+                        default=128,
                         help='POI embedding dimensions')
     parser.add_argument('--poi-sage-dim',
                         type=int,
@@ -84,11 +84,11 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=20,
+                        default=40,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,
-                        default=50,
+                        default=100,
                         help='Number of epochs to train.')
     parser.add_argument('--lr',
                         type=float,
