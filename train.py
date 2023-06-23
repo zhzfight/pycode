@@ -86,7 +86,7 @@ def train(args):
     # %% ====================== Define Dataset ======================
 
     class produceSampleProcess(multiprocessing.Process):
-        def __init__(self, tasks, node_dicts, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id,primary,locks):
+        def __init__(self, tasks, node_dicts, adj_list, restart_prob, num_walks, threshold, adjOrdis,  id,locks):
             super().__init__()
             self.tasks = tasks
             self.node_dicts = node_dicts
@@ -97,33 +97,25 @@ def train(args):
             self.adj_list = adj_list
             self.restart_prob = restart_prob
             self.num_walks = num_walks
-            self.primary=primary
             self.count_dict = {key: threshold for key in tasks}
             self.missing_dict = {key: 0 for key in tasks}
 
         def run(self):
             while True:
                 for node in self.tasks:
-                    primary_idx=int(node/self.primary)
-                    if node not in self.node_dicts[primary_idx]:
-                        self.node_dicts[primary_idx][node]=[]
-                        for _ in range(self.threshold):
-                            random_walk = random_walk_with_restart(self.adj_list, node, self.restart_prob,
-                                                                   self.num_walks,
-                                                                   self.adjOrdis)
-                            self.node_dicts[primary_idx][node].append(random_walk)
-                        continue
-                    q= len(self.node_dicts[primary_idx][node])
+                    self.locks[node].acquire()
+                    q= len(self.node_dicts[node])
                     if q < self.threshold / 2:
                         for _ in range(self.count_dict[node] - q):
                             random_walk = random_walk_with_restart(self.adj_list, node, self.restart_prob,
                                                                    self.num_walks,
                                                                    self.adjOrdis)
-                            self.node_dicts[primary_idx][node].append(random_walk)
+                            self.node_dicts[node].append(random_walk)
                         self.missing_dict[node] += 1
                         if self.missing_dict[node] > 2:
                             self.missing_dict[node] = 0
                             self.count_dict[node] += self.threshold
+                    self.locks[node].release()
 
     pois_in_train = set()
 
@@ -416,30 +408,27 @@ def train(args):
     adj_dicts = None
     dis_dicts = None
     manager=None
-    locks=None
+    adj_locks=None
+    dis_locks=None
     threshold = 10  # 队列大小阈值
     primary = 20
     process_list=[]
     if args.embed_mode != 'poi':
         manager=multiprocessing.Manager()
-        num_dict=math.ceil(poi_num/primary)
-        adj_dicts=manager.list([multiprocessing.dict() for _ in range(num_dict)])
-        dis_dicts=manager.list([multiprocessing.dict() for _ in range(num_dict)])
-        locks=manager.list([multiprocessing.Lock() for _ in range(num_dict)])
-        for _ in range(num_dict):
-            adj_dicts.append(manager.dict())
-            dis_dicts.append(manager.dict())
-            locks.append(multiprocessing.Lock())
+        adj_dicts=[manager.list([])]*poi_num
+        dis_dicts=[manager.list([])]*poi_num
+        adj_locks=[multiprocessing.Lock()]*poi_num
+        dis_locks=[multiprocessing.Lock()]*poi_num
         tasks = split_list([i for i in range(poi_num)], int(args.cpus / 2))
         for idx, task in enumerate(tasks):
             ap = produceSampleProcess(tasks=task, node_dicts=adj_dicts, adj_list=adj, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='adj',  id=idx,primary=primary,locks=locks)
+                                      threshold=threshold, adjOrdis='adj',  id=idx,locks=adj_locks)
             ap.start()
             process_list.append(ap)
             dp = produceSampleProcess(tasks=task, node_dicts=dis_dicts, adj_list=dis, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
-                                      threshold=threshold, adjOrdis='dis',  id=idx,primary=primary,locks=locks)
+                                      threshold=threshold, adjOrdis='dis',  id=idx,locks=dis_locks)
             dp.start()
             process_list.append(dp)
 
@@ -452,7 +441,7 @@ def train(args):
         X = X.to(device=args.device, dtype=torch.float)
         poi_sage_embed_model = GraphSAGE(input_dim=X.shape[1], embed_dim=args.poi_sage_dim,
                                          device=args.device, restart_prob=args.restart_prob, num_walks=args.num_walks,
-                                         dropout=args.dropout, adj_dicts=adj_dicts, dis_dicts=dis_dicts,primary=primary)
+                                         dropout=args.dropout, adj_dicts=adj_dicts, dis_dicts=dis_dicts,adj_locks=adj_locks,dis_locks=dis_locks)
 
     user_embed_model = UserEmbeddings(user_num, args.user_embed_dim)
 
