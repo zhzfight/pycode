@@ -382,7 +382,7 @@ class SageLayer(nn.Module):
         missing_adj_idx = []
         missing_dis_idx = []
         for idx, node in enumerate(unique_nodes_list):
-            primary_idx = node / self.primary
+            primary_idx = int(node / self.primary)
             if node in self.adj_dicts[primary_idx] and len(self.adj_dicts[primary_idx][node]) > 0:
                 random_walk = self.adj_dicts[primary_idx][node].pop(0)
                 adj_neighbors[idx] = random_walk

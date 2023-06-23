@@ -103,7 +103,7 @@ def train(args):
         def run(self):
             while True:
                 for node in self.tasks:
-                    primary_idx=node/self.primary
+                    primary_idx=int(node/self.primary)
                     if node not in self.node_dicts[primary_idx]:
                         self.node_dicts[primary_idx][node]=[]
                         for _ in range(self.threshold):
@@ -112,13 +112,13 @@ def train(args):
                                                                    self.adjOrdis)
                             self.node_dicts[primary_idx][node].append(random_walk)
                         continue
-                    walk_list = self.node_dicts[primary_idx][node]
-                    if len(walk_list) < self.threshold / 2:
-                        for _ in range(self.count_dict[node] - len(walk_list)):
+                    q= len(self.node_dicts[primary_idx][node])
+                    if q < self.threshold / 2:
+                        for _ in range(self.count_dict[node] - q):
                             random_walk = random_walk_with_restart(self.adj_list, node, self.restart_prob,
                                                                    self.num_walks,
                                                                    self.adjOrdis)
-                            walk_list.append(random_walk)
+                            self.node_dicts[primary_idx][node].append(random_walk)
                         self.missing_dict[node] += 1
                         if self.missing_dict[node] > 2:
                             self.missing_dict[node] = 0
