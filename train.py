@@ -407,15 +407,17 @@ def train(args):
         print(f'adj {len(adj)} {average_adj_len} dis {len(dis)} {average_dis_len}')
     adj_dicts = None
     dis_dicts = None
-    manager=None
+    managers=None
 
     threshold = 10  # 队列大小阈值
-    primary = 200
     process_list=[]
     if args.embed_mode != 'poi':
-        manager=multiprocessing.Manager()
-        adj_dicts=[manager.Queue()]*poi_num
-        dis_dicts=[manager.Queue()]*poi_num
+        managers=[]
+        managers_num=10
+        for _ in range(managers_num):
+            managers.append(multiprocessing.Manager())
+        adj_dicts=[managers[i%managers_num].Queue() for i in range(poi_num)]
+        dis_dicts=[managers[i%managers_num].Queue() for i in range(poi_num)]
         tasks = split_list([i for i in range(poi_num)], int(args.cpus / 2))
         for idx, task in enumerate(tasks):
             ap = produceSampleProcess(tasks=task, node_dicts=adj_dicts, adj_list=adj, restart_prob=args.restart_prob,
@@ -914,6 +916,8 @@ def train(args):
             print(f'val_epochs_mrr_list={[float(f"{each:.4f}") for each in val_epochs_mrr_list]}', file=f)
     print('ok! it is over.')
     if args.embed_mode!='poi':
+        for manager in managers:
+            manager.shutdown()
         for p in process_list:
             p.terminate()
 
