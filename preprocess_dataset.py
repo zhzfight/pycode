@@ -8,7 +8,7 @@ import collections
 import networkx as nx
 import numpy as np
 
-preversed_times=5
+preversed_times=10
 def static(df):
     df=df.copy()
     df['datetime'] = pd.to_datetime(df['local_time'])

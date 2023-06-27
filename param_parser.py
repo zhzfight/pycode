@@ -27,7 +27,7 @@ def parameter_parser():
                         help='dataset path')
 
     parser.add_argument('--embed-mode',
-                        type=str,default='sage',)
+                        type=str,default='poi',)
     parser.add_argument('--pure-transformer',
                         type=bool, default=False)
     parser.add_argument('--cpus',type=int,default=4)
@@ -51,7 +51,7 @@ def parameter_parser():
     # Model hyper-parameters
     parser.add_argument('--poi-id-dim',
                         type=int,
-                        default=128,
+                        default=48,
                         help='POI embedding dimensions')
     parser.add_argument('--poi-sage-dim',
                         type=int,
@@ -73,7 +73,7 @@ def parameter_parser():
                         help='Time embedding dimensions')
     parser.add_argument('--cat-embed-dim',
                         type=int,
-                        default=32,
+                        default=64,
                         help='Category embedding dimensions')
     parser.add_argument('--time-loss-weight',
                         type=int,

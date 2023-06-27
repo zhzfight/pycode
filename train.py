@@ -131,7 +131,7 @@ def train(args):
             self.input_seq_h_timeMatrixes = []
             self.label_seq_w_timeMatrixes = []
             self.label_seq_h_timeMatrixes = []
-            input_end_idx = -3
+            input_end_idx = -6
             self.time_threshold = time_threshold
             label_end_idx = input_end_idx + 1
             for user in tqdm(set(df['user_id'].tolist())):
@@ -142,10 +142,8 @@ def train(args):
                 h = user_df['hour_of_day'].to_list()
                 w = user_df['day_of_week'].to_list()
                 dt = user_df['datetime'].to_list()
-                if len(poi_ids) < 5:
-                    continue
 
-                input_start_idx = max(len(poi_ids) - 3 - args.max_seq_len, 0)
+                input_start_idx = max(len(poi_ids) - 6 - args.max_seq_len, 0)
                 label_start_idx = input_start_idx + 1
                 self.users.append(user)
                 self.input_seqs.append(list(
@@ -234,8 +232,6 @@ def train(args):
             self.input_seq_h_timeMatrixes = []
             self.label_seq_w_timeMatrixes = []
             self.label_seq_h_timeMatrixes = []
-            input_end_idx = -2
-            label_end_idx = input_end_idx + 1
             for user in tqdm(set(df['user_id'].tolist())):
                 user_df = df[df['user_id'] == user]
                 user_df = user_df.sort_values(by='datetime')
@@ -244,31 +240,35 @@ def train(args):
                 time_bins = user_df['hour_of_week'].to_list()
                 h = user_df['hour_of_day'].to_list()
                 w = user_df['day_of_week'].to_list()
-                if len(poi_ids) < 5:
-                    continue
-                if poi_ids[-2] not in pois_in_train:
-                    continue
-                input_start_idx = max(len(poi_ids) - 2 - args.max_seq_len, 0)
-                label_start_idx = input_start_idx + 1
-                self.users.append(user)
-                self.input_seqs.append(list(
-                    zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
-                        h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))
-                input_h_matrix = compute_relative_time_matrix(h[input_start_idx:input_end_idx],
-                                                              h[input_start_idx:input_end_idx], 24)
-                input_w_matrix = compute_relative_time_matrix(w[input_start_idx:input_end_idx],
-                                                              w[input_start_idx:input_end_idx], 7)
-                self.input_seq_h_timeMatrixes.append(torch.LongTensor(input_h_matrix))
-                self.input_seq_w_timeMatrixes.append(torch.LongTensor(input_w_matrix))
-                self.label_seqs.append(list(
-                    zip(poi_ids[label_start_idx:label_end_idx], time_bins[label_start_idx:label_end_idx],
-                        h[label_start_idx:label_end_idx], w[label_start_idx:label_end_idx])))
-                label_h_matrix = compute_relative_time_matrix(h[label_start_idx:label_end_idx],
-                                                              h[input_start_idx:input_end_idx], 24)
-                label_w_matrix = compute_relative_time_matrix(w[label_start_idx:label_end_idx],
-                                                              w[input_start_idx:input_end_idx], 7)
-                self.label_seq_h_timeMatrixes.append(torch.LongTensor(label_h_matrix))
-                self.label_seq_w_timeMatrixes.append(torch.LongTensor(label_w_matrix))
+
+
+                for i in range(5,0,-1):
+                    input_start_idx = max(len(poi_ids) - i - args.max_seq_len, 0)
+                    label_start_idx = input_start_idx + 1
+                    input_end_idx = -i
+                    label_end_idx = input_end_idx + 1
+                    if label_end_idx==0:
+                        label_end_idx=None
+
+                    self.users.append(user)
+                    self.input_seqs.append(list(
+                        zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
+                            h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))
+                    input_h_matrix = compute_relative_time_matrix(h[input_start_idx:input_end_idx],
+                                                                  h[input_start_idx:input_end_idx], 24)
+                    input_w_matrix = compute_relative_time_matrix(w[input_start_idx:input_end_idx],
+                                                                  w[input_start_idx:input_end_idx], 7)
+                    self.input_seq_h_timeMatrixes.append(torch.LongTensor(input_h_matrix))
+                    self.input_seq_w_timeMatrixes.append(torch.LongTensor(input_w_matrix))
+                    self.label_seqs.append(list(
+                        zip(poi_ids[label_start_idx:label_end_idx], time_bins[label_start_idx:label_end_idx],
+                            h[label_start_idx:label_end_idx], w[label_start_idx:label_end_idx])))
+                    label_h_matrix = compute_relative_time_matrix(h[label_start_idx:label_end_idx],
+                                                                  h[input_start_idx:input_end_idx], 24)
+                    label_w_matrix = compute_relative_time_matrix(w[label_start_idx:label_end_idx],
+                                                                  w[input_start_idx:input_end_idx], 7)
+                    self.label_seq_h_timeMatrixes.append(torch.LongTensor(label_h_matrix))
+                    self.label_seq_w_timeMatrixes.append(torch.LongTensor(label_w_matrix))
 
         def __len__(self):
             assert len(self.input_seqs) == len(self.label_seqs) == len(self.users)
@@ -280,58 +280,6 @@ def train(args):
                 self.input_seq_w_timeMatrixes[index], self.label_seq_h_timeMatrixes[index],
                 self.label_seq_w_timeMatrixes[index])
 
-    class TrajectoryDatasetTest(Dataset):
-        def __init__(self, df):
-            self.users = []
-            self.input_seqs = []
-            self.label_seqs = []
-            self.input_seq_w_timeMatrixes = []
-            self.input_seq_h_timeMatrixes = []
-            self.label_seq_w_timeMatrixes = []
-            self.label_seq_h_timeMatrixes = []
-            input_end_idx = -1
-            for user in tqdm(set(df['user_id'].tolist())):
-                user_df = df[df['user_id'] == user]
-                user_df = user_df.sort_values(by='datetime')
-                poi_ids = user_df['POI_id'].to_list()
-                time_bins = user_df['hour_of_week'].to_list()
-                h = user_df['hour_of_day'].to_list()
-                w = user_df['day_of_week'].to_list()
-                if len(poi_ids) < 5:
-                    continue
-                if poi_ids[-1] not in pois_in_train:
-                    continue
-                input_start_idx = max(len(poi_ids) - 1 - args.max_seq_len, 0)
-                label_start_idx = input_start_idx + 1
-                self.users.append(user)
-                self.input_seqs.append(list(
-                    zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
-                        h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))
-                input_h_matrix = compute_relative_time_matrix(h[input_start_idx:input_end_idx],
-                                                              h[input_start_idx:input_end_idx], 24)
-                input_w_matrix = compute_relative_time_matrix(w[input_start_idx:input_end_idx],
-                                                              w[input_start_idx:input_end_idx], 7)
-                self.input_seq_h_timeMatrixes.append(torch.LongTensor(input_h_matrix))
-                self.input_seq_w_timeMatrixes.append(torch.LongTensor(input_w_matrix))
-                self.label_seqs.append(list(
-                    zip(poi_ids[label_start_idx:], time_bins[label_start_idx:],
-                        h[label_start_idx:], w[label_start_idx:])))
-                label_h_matrix = compute_relative_time_matrix(h[label_start_idx:],
-                                                              h[input_start_idx:input_end_idx], 24)
-                label_w_matrix = compute_relative_time_matrix(w[label_start_idx:],
-                                                              w[input_start_idx:input_end_idx], 7)
-                self.label_seq_h_timeMatrixes.append(torch.LongTensor(label_h_matrix))
-                self.label_seq_w_timeMatrixes.append(torch.LongTensor(label_w_matrix))
-
-        def __len__(self):
-            assert len(self.input_seqs) == len(self.label_seqs) == len(self.users)
-            return len(self.users)
-
-        def __getitem__(self, index):
-            return (
-                self.users[index], self.input_seqs[index], self.label_seqs[index], self.input_seq_h_timeMatrixes[index],
-                self.input_seq_w_timeMatrixes[index], self.label_seq_h_timeMatrixes[index],
-                self.label_seq_w_timeMatrixes[index])
 
     def time_collate_fn(batch):
         users, input_seqs, label_seqs, input_seq_h_matrices, input_seq_w_matrices, \
@@ -354,7 +302,6 @@ def train(args):
     print('Prepare dataloader...')
     train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'))
     val_dataset = TrajectoryDatasetVal(df)
-    test_dataset = TrajectoryDatasetTest(df)
 
     train_loader = DataLoader(train_dataset,
                               batch_size=args.batch,
@@ -366,11 +313,7 @@ def train(args):
                             shuffle=False, drop_last=False,
                             pin_memory=True, num_workers=args.workers,
                             collate_fn=collate_fn)
-    test_loader = DataLoader(val_dataset,
-                             batch_size=args.batch,
-                             shuffle=False, drop_last=False,
-                             pin_memory=True, num_workers=args.workers,
-                             collate_fn=collate_fn)
+
     adj = None
     dis = None
     X = None
@@ -413,7 +356,7 @@ def train(args):
     process_list=[]
     if args.embed_mode != 'poi':
         managers=[]
-        managers_num=10
+        managers_num=100
         for _ in range(managers_num):
             managers.append(multiprocessing.Manager())
         adj_dicts=[managers[i%managers_num].Queue() for i in range(poi_num)]
