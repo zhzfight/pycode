@@ -23,7 +23,7 @@ from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
 from model import UserEmbeddings, CategoryEmbeddings, TimeIntervalAwareTransformer, PoiEmbeddings, TimeEmbeddings, \
-    GraphSAGE, TransformerModel
+    GraphSAGE, TransformerModel,IntervalAwareTransformer
 from param_parser import parameter_parser
 from utils import increment_path, calculate_laplacian_matrix, zipdir, top_k_acc_last_timestep, \
     mAP_metric_last_timestep, MRR_metric_last_timestep, maksed_mse_loss, adj_list, split_list, random_walk_with_restart, \
@@ -79,10 +79,6 @@ def train(args):
     df['POI_id'] = pd.factorize(df['POI_id'])[0]
     df['POI_catid'] = pd.factorize(df['POI_catid'])[0]
     df['user_id'] = pd.factorize(df['user_id'])[0]
-    df['datetime'] = pd.to_datetime(df['local_time'])
-    df['hour_of_week'] = df['datetime'].dt.dayofweek * 24 + df['datetime'].dt.hour
-    df['hour_of_day'] = df['datetime'].dt.hour
-    df['day_of_week'] = df['datetime'].dt.dayofweek
     poi_num = len(set(df['POI_id'].to_list()))
     cat_num = len(set(df['POI_catid'].to_list()))
     user_num = len(set(df['user_id'].to_list()))
@@ -136,20 +132,20 @@ def train(args):
             label_end_idx = input_end_idx + 1
             for user in tqdm(set(df['user_id'].tolist())):
                 user_df = df[df['user_id'] == user]
-                user_df = user_df.sort_values(by='datetime')
+                user_df = user_df.sort_values(by='date_time')
                 poi_ids = user_df['POI_id'].to_list()
                 time_bins = user_df['hour_of_week'].to_list()
                 h = user_df['hour_of_day'].to_list()
                 w = user_df['day_of_week'].to_list()
-                dt = user_df['datetime'].to_list()
-
+                dt = user_df['date_time'].to_list()
+                idx=user_df['index'].to_list()
                 input_start_idx = max(len(poi_ids) - 6 - args.max_seq_len, 0)
                 label_start_idx = input_start_idx + 1
                 self.users.append(user)
                 self.input_seqs.append(list(
                     zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
                         h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx],
-                        dt[input_start_idx:input_end_idx], )))
+                        dt[input_start_idx:input_end_idx], idx[input_start_idx:input_end_idx])))
                 input_h_matrix = compute_relative_time_matrix(h[input_start_idx:input_end_idx],h[input_start_idx:input_end_idx], 24)
                 input_w_matrix = compute_relative_time_matrix(w[input_start_idx:input_end_idx],w[input_start_idx:input_end_idx], 7)
                 self.input_seq_h_timeMatrixes.append(torch.LongTensor(input_h_matrix))
@@ -157,7 +153,7 @@ def train(args):
                 self.label_seqs.append(list(
                     zip(poi_ids[label_start_idx:label_end_idx], time_bins[label_start_idx:label_end_idx],
                         h[label_start_idx:label_end_idx], w[label_start_idx:label_end_idx],
-                        dt[label_start_idx:label_end_idx], )))
+                        dt[label_start_idx:label_end_idx], idx[label_start_idx:label_end_idx])))
                 label_h_matrix = compute_relative_time_matrix(h[label_start_idx:label_end_idx],h[input_start_idx:input_end_idx], 24)
                 label_w_matrix = compute_relative_time_matrix(w[label_start_idx:label_end_idx],w[input_start_idx:input_end_idx], 7)
                 self.label_seq_h_timeMatrixes.append(torch.LongTensor(label_h_matrix))
@@ -193,7 +189,7 @@ def train(args):
                     return 3
 
             # 按照timestamp列排序
-            df = self.df.sort_values(['user_id', 'datetime'])
+            df = self.df.sort_values(['user_id', 'date_time'])
             # 获取每个组中时间戳最大的两条记录的索引
             idx = df.groupby('user_id').tail(2).index
             # 删除指定索引的行
@@ -234,12 +230,13 @@ def train(args):
             self.label_seq_h_timeMatrixes = []
             for user in tqdm(set(df['user_id'].tolist())):
                 user_df = df[df['user_id'] == user]
-                user_df = user_df.sort_values(by='datetime')
+                user_df = user_df.sort_values(by='date_time')
 
                 poi_ids = user_df['POI_id'].to_list()
                 time_bins = user_df['hour_of_week'].to_list()
                 h = user_df['hour_of_day'].to_list()
                 w = user_df['day_of_week'].to_list()
+                idx=user_df['index'].to_list()
 
 
                 for i in range(5,0,-1):
@@ -247,13 +244,15 @@ def train(args):
                     label_start_idx = input_start_idx + 1
                     input_end_idx = -i
                     label_end_idx = input_end_idx + 1
+                    if poi_ids[input_end_idx] not in pois_in_train:
+                        break
                     if label_end_idx==0:
                         label_end_idx=None
 
                     self.users.append(user)
                     self.input_seqs.append(list(
                         zip(poi_ids[input_start_idx:input_end_idx], time_bins[input_start_idx:input_end_idx],
-                            h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx])))
+                            h[input_start_idx:input_end_idx], w[input_start_idx:input_end_idx],idx[input_start_idx:input_end_idx])))
                     input_h_matrix = compute_relative_time_matrix(h[input_start_idx:input_end_idx],
                                                                   h[input_start_idx:input_end_idx], 24)
                     input_w_matrix = compute_relative_time_matrix(w[input_start_idx:input_end_idx],
@@ -262,7 +261,7 @@ def train(args):
                     self.input_seq_w_timeMatrixes.append(torch.LongTensor(input_w_matrix))
                     self.label_seqs.append(list(
                         zip(poi_ids[label_start_idx:label_end_idx], time_bins[label_start_idx:label_end_idx],
-                            h[label_start_idx:label_end_idx], w[label_start_idx:label_end_idx])))
+                            h[label_start_idx:label_end_idx], w[label_start_idx:label_end_idx],idx[label_start_idx:label_end_idx])))
                     label_h_matrix = compute_relative_time_matrix(h[label_start_idx:label_end_idx],
                                                                   h[input_start_idx:input_end_idx], 24)
                     label_w_matrix = compute_relative_time_matrix(w[label_start_idx:label_end_idx],
@@ -412,12 +411,12 @@ def train(args):
                                      device=args.device,
                                      dropout=args.dropout)
     else:
-        seq_model = TimeIntervalAwareTransformer(num_poi=poi_num,
+        seq_model = IntervalAwareTransformer(num_poi=poi_num,
                                                  num_cat=cat_num,
                                                  nhid=args.seq_input_embed,
                                                  batch_size=args.batch,
                                                  device=args.device,
-                                                 dropout=args.dropout, user_dim=args.user_embed_dim)
+                                                 dropout=args.dropout, user_dim=args.user_embed_dim,max_len=args.max_seq_len,nlayer=2)
 
     # Define overall loss and optimizer
     if args.embed_mode == 'poi-sage':
@@ -553,6 +552,7 @@ def train(args):
             batch_input_w_matrices = []
             batch_label_h_matrices = []
             batch_label_w_matrices = []
+            batch_seq_idxes=[]
 
             if freeze and args.mode != 'poi':
                 poi_sage_embeddings = freeze_sage_embeddings
@@ -568,6 +568,8 @@ def train(args):
                 batch_label_h_matrices.append(sample[5])
                 batch_label_w_matrices.append(sample[6])
                 label_seq = [each[0] for each in sample[2]]
+                input_seq_idx=[each[5] for each in sample[1]]
+                batch_seq_idxes.append(torch.FloatTensor(input_seq_idx).to(args.device))
                 batch_label_seqs.append(torch.LongTensor(label_seq).to(args.device))
 
                 input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, 'train', freeze=freeze,
@@ -580,6 +582,7 @@ def train(args):
             # Pad seqs for batch training
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
+            batch_padded_seq_idxes=pad_sequence(batch_seq_idxes,batch_first=True,padding_value=99999).to(args.device)
             batch_user_embedding = user_embed_model(torch.LongTensor(batch_user).to(args.device))
 
 
@@ -593,7 +596,7 @@ def train(args):
             x = batch_padded.to(device=args.device)
             y_poi = label_padded_poi.to(device=args.device)
             y_pred_poi = seq_model(x, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
-                                   batch_label_w_matrices, batch_user_embedding)
+                                   batch_label_w_matrices, batch_user_embedding,batch_padded_seq_idxes)
 
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
 
@@ -689,6 +692,7 @@ def train(args):
             batch_input_w_matrices = []
             batch_label_h_matrices = []
             batch_label_w_matrices = []
+            batch_seq_idxes = []
 
             # Convert input seq to embeddings
             for sample in batch:
@@ -698,6 +702,8 @@ def train(args):
                 batch_label_h_matrices.append(sample[5])
                 batch_label_w_matrices.append(sample[6])
                 label_seq = [each[0] for each in sample[2]]
+                input_seq_idx = [each[5] for each in sample[1]]
+                batch_seq_idxes.append(torch.FloatTensor(input_seq_idx).to(args.device))
                 batch_label_seqs.append(torch.LongTensor(label_seq).to(args.device))
 
                 input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, 'eval', freeze=freeze,
@@ -708,6 +714,8 @@ def train(args):
             # Pad seqs for batch training
             batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
             label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
+            batch_padded_seq_idxes = pad_sequence(batch_seq_idxes, batch_first=True, padding_value=99999).to(
+                args.device)
             batch_user_embedding = user_embed_model(torch.LongTensor(batch_user).to(args.device))
             if not args.pure_transformer:
                 batch_input_h_matrices = torch.stack(batch_input_h_matrices).to(args.device)
@@ -718,7 +726,7 @@ def train(args):
             x = batch_padded.to(device=args.device)
             y_poi = label_padded_poi.to(device=args.device)
             y_pred_poi = seq_model(x, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
-                                   batch_label_w_matrices, batch_user_embedding)
+                                   batch_label_w_matrices, batch_user_embedding,batch_padded_seq_idxes)
 
             # Calculate loss
             loss_poi = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
