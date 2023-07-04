@@ -129,6 +129,8 @@ class TimeIntervalAwareTransformer(nn.Module):
         # src=self.rotary_emb_attn.rotate_queries_or_keys(src)
         Q = self.W1_Q(src)
         K = self.W1_K(src)
+
+
         V = self.W1_V(src)
 
         attn_weight = Q.matmul(torch.transpose(K, 1, 2))
@@ -391,12 +393,12 @@ class SageLayer(nn.Module):
 
 
 class GraphSAGE(nn.Module):
-    def __init__(self, input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_dicts, dis_dicts):
+    def __init__(self, poi_num,input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_dicts, dis_dicts):
         super(GraphSAGE, self).__init__()
-        self.id2node = None
+        self.id2node = nn.Embedding(poi_num,input_dim)
         self.device = device
 
-        self.layer2 = SageLayer(id2feat=lambda nodes: self.id2node[nodes],
+        self.layer2 = SageLayer(id2feat=lambda nodes: self.id2node(nodes),
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=input_dim,
                                 output_dim=embed_dim, device=device, dropout=dropout, id=2, adj_dicts=adj_dicts,
                                 dis_dicts=dis_dicts)
@@ -410,7 +412,7 @@ class GraphSAGE(nn.Module):
         return feats
 
     def setup(self, X, adj, dis):
-        self.id2node = X
+        #self.id2node = X
         self.layer1.set_adj(adj, dis)
         self.layer2.set_adj(adj, dis)
 
@@ -483,13 +485,13 @@ class Attention(nn.Module):
 
     def forward(self, seqs, time_mask, attn_mask, d_time_matrix_K, w_time_matrix_K, d_time_matrix_V,
                 w_time_matrix_V,batch_seq_idxes):
-        Q, K, V = self.Q_w(seqs), self.K_w(seqs), self.V_w(seqs)
-        Q_=self.rotary_embed.rotate_queries_or_keys(Q,batch_seq_idxes)
-        K_=self.rotary_embed.rotate_queries_or_keys(K,batch_seq_idxes)
-        # batched channel wise matmul to gen attention weights
-        attn_weights = Q_.matmul(torch.transpose(K_, 1, 2))
-        attn_weights += d_time_matrix_K.matmul(Q.unsqueeze(-1)).squeeze(-1)
-        attn_weights += w_time_matrix_K.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        Q=K=self.rotary_embed.rotate_queries_or_keys(seqs,batch_seq_idxes)
+        Q,  V = self.Q_w(Q),  self.V_w(seqs)
+        K_expanded = K.unsqueeze(2).repeat(1, 1, K.shape[1], 1).transpose(2, 1)
+        K_d_w = K_expanded + d_time_matrix_K + w_time_matrix_K
+        K_d_w=self.K_w(K_d_w)
+        attn_weights = Q.unsqueeze(2).matmul(K_d_w.transpose(3,2)).squeeze(2)
+
         # seq length adaptive scaling
         attn_weights = attn_weights / (K.shape[-1] ** 0.5)
 
@@ -512,8 +514,8 @@ class Attention(nn.Module):
         attn_weights = self.dropout(attn_weights)
 
         outputs = attn_weights.matmul(V)
-        outputs += attn_weights.unsqueeze(2).matmul(d_time_matrix_V).reshape(outputs.shape).squeeze(2)
-        outputs += attn_weights.unsqueeze(2).matmul(w_time_matrix_V).reshape(outputs.shape).squeeze(2)
+        #outputs += attn_weights.unsqueeze(2).matmul(d_time_matrix_V).reshape(outputs.shape).squeeze(2)
+        #outputs += attn_weights.unsqueeze(2).matmul(w_time_matrix_V).reshape(outputs.shape).squeeze(2)
 
         return outputs
 

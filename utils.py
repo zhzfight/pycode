@@ -14,6 +14,53 @@ from geographiclib.geodesic import Geodesic
 from tqdm.contrib.concurrent import process_map
 
 geod = Geodesic.WGS84
+
+import numpy as np
+
+def dcg_at_k(r, k):
+    r = np.asfarray(r)[:k]
+    if r.size:
+        return np.sum(np.subtract(np.power(2, r), 1) / np.log2(np.arange(2, r.size + 2)))
+    return 0.
+
+def ndcg_at_k(r, k):
+    idcg = dcg_at_k(sorted(r, reverse=True), k)
+    if not idcg:
+        return 0.
+    return dcg_at_k(r, k) / idcg
+
+def hit_at_k(r, k):
+    r = np.asfarray(r)[:k]
+    if np.sum(r) > 0:
+        return 1
+    else:
+        return 0
+
+def evaluate(output, label, batch_len, N):
+    B = output.shape[0]
+    L = output.shape[1]
+
+    ndcg_list = []
+    hit_list = []
+
+    for b in range(B):
+        l = batch_len[b] - 1
+        pred = output[b,l,:]
+        true_item = label[b,l]
+        top_k = np.argsort(pred)[::-1][:N]
+        rel = np.zeros(N)
+        rel[top_k == true_item] = 1
+        ndcg_list.append(ndcg_at_k(rel, N))
+        hit_list.append(hit_at_k(rel, N))
+
+    ndcg_score = np.mean(ndcg_list)
+    hit_score = np.mean(hit_list)
+
+    return ndcg_score, hit_score
+
+
+
+
 def compute_relative_time_matrix(t1, t2,remainder):
     t1 = np.array(t1)
     t2 = np.array(t2)
