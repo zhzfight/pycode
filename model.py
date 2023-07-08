@@ -1,5 +1,5 @@
 import math
-
+import sys
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -100,8 +100,8 @@ class TimeIntervalAwareTransformer(nn.Module):
         self.norm22 = nn.LayerNorm(nhid)
 
         self.init_weights()
-        self.rotary_emb_attn = RotaryEmbedding(dim=nhid,device=device)
-        self.rotary_emb_decode = RotaryEmbedding(dim=nhid,device=device)
+        self.rotary_emb_attn = RotaryEmbedding(dim=nhid, device=device)
+        self.rotary_emb_decode = RotaryEmbedding(dim=nhid, device=device)
         self.u_proj = nn.Linear(user_dim, nhid)
         self.pos_encoder = PositionalEncoding(nhid, dropout)
 
@@ -111,7 +111,7 @@ class TimeIntervalAwareTransformer(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
-                batch_label_w_matrices, batch_user_embedding,batch_seq_idxes):
+                batch_label_w_matrices, batch_user_embedding, batch_seq_idxes):
         hourInterval_embedding = self.hour_embedding(batch_input_h_matrices)
         dayInterval_embedding = self.day_embedding(batch_input_w_matrices)
         label_hourInterval_embedding = self.hour_embedding(batch_label_h_matrices)
@@ -125,12 +125,8 @@ class TimeIntervalAwareTransformer(nn.Module):
         attn_mask = attn_mask.unsqueeze(0).expand(src.shape[0], -1, -1)
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, src.shape[1])
 
-        src = self.pos_encoder(src)
-        # src=self.rotary_emb_attn.rotate_queries_or_keys(src)
         Q = self.W1_Q(src)
         K = self.W1_K(src)
-
-
         V = self.W1_V(src)
 
         attn_weight = Q.matmul(torch.transpose(K, 1, 2))
@@ -230,9 +226,9 @@ class RotaryEmbedding(nn.Module):
         else:
             raise ValueError(f'unknown modality {freqs_for}')
         self.freqs = nn.Parameter(freqs, requires_grad=learned_freq)
-        self.device=device
+        self.device = device
 
-    def rotate_queries_or_keys(self, t,idx):
+    def rotate_queries_or_keys(self, t, idx):
         freqs = self.forward(idx)
         return self.apply_rotary_emb(freqs, t)
 
@@ -242,14 +238,13 @@ class RotaryEmbedding(nn.Module):
         freqs = repeat(freqs, '... n -> ... (n r)', r=2)
         return freqs
 
-    def rotate_half(self,x):
+    def rotate_half(self, x):
         x = rearrange(x, '... (d r) -> ... d r', r=2)
         x1, x2 = x.unbind(dim=-1)
         x = torch.stack((-x2, x1), dim=-1)
         return rearrange(x, '... d r -> ... (d r)')
 
-    def apply_rotary_emb(self,freqs, t,  scale=1.):
-        rot_dim = freqs.shape[-1]
+    def apply_rotary_emb(self, freqs, t, scale=1.):
         t = (t * freqs.cos() * scale) + (self.rotate_half(t) * freqs.sin() * scale)
         return t
 
@@ -267,7 +262,6 @@ class MeanAggregator(nn.Module):
         super(MeanAggregator, self).__init__()
         self.id2feat = id2feat
         self.device = device
-        self.W = nn.Linear(dim, dim)
 
     def forward(self, to_neighs):
         """
@@ -290,7 +284,6 @@ class MeanAggregator(nn.Module):
 
         embed_matrix = self.id2feat(
             torch.LongTensor(list(unique_nodes_list)).to(self.device))  # （unique_count, feat_dim)
-        embed_matrix = self.W(embed_matrix)
         to_feats = mask.mm(embed_matrix)  # n * embed_dim
         return to_feats  # n * embed_dim
 
@@ -304,14 +297,14 @@ class SageLayer(nn.Module):
     """
 
     def __init__(self, id2feat, restart_prob, num_walks, input_dim, output_dim, device, dropout,
-                 id, adj_dicts, dis_dicts):
+                 id, adj_dicts, dis_dicts, adj_list, dis_list):
         super(SageLayer, self).__init__()
         self.id2feat = id2feat
         self.dis_agg = MeanAggregator(self.id2feat, device, input_dim)
         self.adj_agg = MeanAggregator(self.id2feat, device, input_dim)
         self.device = device
-        self.adj_list = None
-        self.dis_list = None
+        self.adj_list = adj_list
+        self.dis_list = dis_list
         self.restart_prob = restart_prob
         self.num_walks = num_walks
         self.leakyRelu = nn.LeakyReLU(0.2)
@@ -387,38 +380,29 @@ class SageLayer(nn.Module):
 
         return res
 
-    def set_adj(self, adj, dis):
-        self.adj_list = adj
-        self.dis_list = dis
-
 
 class GraphSAGE(nn.Module):
-    def __init__(self, poi_num,input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_dicts, dis_dicts):
+    def __init__(self, poi_num, input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_dicts, dis_dicts,
+                 adj_list, dis_list):
         super(GraphSAGE, self).__init__()
-        self.id2node = nn.Embedding(poi_num,input_dim)
+        self.id2node = nn.Embedding(poi_num, input_dim)
         self.device = device
-
         self.layer2 = SageLayer(id2feat=lambda nodes: self.id2node(nodes),
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=input_dim,
                                 output_dim=embed_dim, device=device, dropout=dropout, id=2, adj_dicts=adj_dicts,
-                                dis_dicts=dis_dicts)
+                                dis_dicts=dis_dicts, adj_list=adj_list, dis_list=dis_list)
         self.layer1 = SageLayer(id2feat=lambda nodes: self.layer2(nodes),
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=embed_dim,
                                 output_dim=embed_dim, device=device, dropout=dropout, id=1, adj_dicts=adj_dicts,
-                                dis_dicts=dis_dicts)
+                                dis_dicts=dis_dicts, adj_list=adj_list, dis_list=dis_list)
 
     def forward(self, nodes):
         feats = self.layer1(nodes)
         return feats
 
-    def setup(self, X, adj, dis):
-        #self.id2node = X
-        self.layer1.set_adj(adj, dis)
-        self.layer2.set_adj(adj, dis)
-
 
 class TransformerModel(nn.Module):
-    def __init__(self, num_poi, num_cat, embed_size, nhead, nhid, nlayers, device, dropout=0.5):
+    def __init__(self, num_poi, embed_size, nhead, nhid, nlayers, device, dropout=0.5):
         super(TransformerModel, self).__init__()
         from torch.nn import TransformerEncoder, TransformerEncoderLayer
         self.model_type = 'Transformer'
@@ -442,7 +426,7 @@ class TransformerModel(nn.Module):
         self.decoder_poi.weight.data.uniform_(-initrange, initrange)
 
     def forward(self, src, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
-                batch_label_w_matrices, batch_user_embedding,batch_seq_idxes):
+                batch_label_w_matrices, batch_user_embedding, batch_seq_idxes):
         src_mask = self.generate_square_subsequent_mask(src.shape[1]).to(self.device)
         src = self.pos_encoder(src)
         x = self.transformer_encoder(src, src_mask)
@@ -481,16 +465,27 @@ class Attention(nn.Module):
         self.hidden_size = nhid
         self.dropout_rate = dropout_rate
         self.device = device
-        self.rotary_embed=RotaryEmbedding(dim=nhid,device=device)
+        self.rotary_embed = RotaryEmbedding(dim=nhid, device=device)
 
     def forward(self, seqs, time_mask, attn_mask, d_time_matrix_K, w_time_matrix_K, d_time_matrix_V,
-                w_time_matrix_V,batch_seq_idxes):
-        Q=K=self.rotary_embed.rotate_queries_or_keys(seqs,batch_seq_idxes)
-        Q,  V = self.Q_w(Q),  self.V_w(seqs)
+                w_time_matrix_V, batch_seq_idxes):
+        '''
+        Q = self.Q_w(seqs)
+        K = self.K_w(seqs)
+        V = self.V_w(seqs)
+        Q = self.rotary_embed.rotate_queries_or_keys(Q, batch_seq_idxes)
+        K = self.rotary_embed.rotate_queries_or_keys(K, batch_seq_idxes)
+        attn_weights = Q.matmul(torch.transpose(K, 1, 2))
+        attn_weights += d_time_matrix_K.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        attn_weights += w_time_matrix_K.matmul(Q.unsqueeze(-1)).squeeze(-1)
+        '''
+
+        Q = K = self.rotary_embed.rotate_queries_or_keys(seqs, batch_seq_idxes)
+        Q, V = self.Q_w(Q), self.V_w(seqs)
         K_expanded = K.unsqueeze(2).repeat(1, 1, K.shape[1], 1).transpose(2, 1)
         K_d_w = K_expanded + d_time_matrix_K + w_time_matrix_K
-        K_d_w=self.K_w(K_d_w)
-        attn_weights = Q.unsqueeze(2).matmul(K_d_w.transpose(3,2)).squeeze(2)
+        K_d_w = self.K_w(K_d_w)
+        attn_weights = Q.unsqueeze(2).matmul(K_d_w.transpose(3, 2)).squeeze(2)
 
         # seq length adaptive scaling
         attn_weights = attn_weights / (K.shape[-1] ** 0.5)
@@ -514,25 +509,59 @@ class Attention(nn.Module):
         attn_weights = self.dropout(attn_weights)
 
         outputs = attn_weights.matmul(V)
-        #outputs += attn_weights.unsqueeze(2).matmul(d_time_matrix_V).reshape(outputs.shape).squeeze(2)
-        #outputs += attn_weights.unsqueeze(2).matmul(w_time_matrix_V).reshape(outputs.shape).squeeze(2)
+        # outputs += attn_weights.unsqueeze(2).matmul(d_time_matrix_V).reshape(outputs.shape).squeeze(2)
+        # outputs += attn_weights.unsqueeze(2).matmul(w_time_matrix_V).reshape(outputs.shape).squeeze(2)
 
         return outputs
 
 
+class softAttention(nn.Module):
+    def __init__(self, nhid, device, dropout_rate):
+        super(softAttention, self).__init__()
+        self.Q_w = nn.Linear(nhid, nhid)
+        self.rotary_embed = RotaryEmbedding(dim=nhid, device=device)
+        self.K_w = nn.Linear(nhid, nhid)
+        self.V_w = nn.Linear(nhid, nhid)
+        self.device = device
+        self.softmax = nn.Softmax(dim=-1)
+        self.dropout = nn.Dropout(p=dropout_rate)
+
+    def forward(self, feats, label_d_time_matrix_K, label_w_time_matrix_K, batch_user_embedding, time_mask, attn_mask,
+                batch_input_idxes, batch_label_idxes):
+        batch_user_embedding = batch_user_embedding.unsqueeze(1).repeat(1, feats.shape[1], 1)
+        batch_user_embedding = self.rotary_embed.rotate_queries_or_keys(batch_user_embedding, batch_label_idxes)
+        Q, V = self.Q_w(batch_user_embedding), self.V_w(feats)
+        K = self.rotary_embed.rotate_queries_or_keys(feats, batch_input_idxes)
+        K_expanded = K.unsqueeze(2).repeat(1, 1, K.shape[1], 1).transpose(2, 1)
+        K_d_w = K_expanded + label_d_time_matrix_K + label_w_time_matrix_K
+        K_d_w = self.K_w(K_d_w)
+        attn_weights = Q.unsqueeze(2).matmul(K_d_w.transpose(3, 2)).squeeze(2)
+
+        attn_weights = attn_weights / (feats.shape[-1] ** 0.5)
+
+        time_mask = time_mask.unsqueeze(-1).expand(-1, -1, attn_weights.shape[-1])
+        attn_mask = attn_mask.unsqueeze(0).expand(attn_weights.shape[0], -1, -1)
+        paddings = torch.ones(attn_weights.shape) * (-2 ** 32 + 1)  # -1e23 # float('-inf')
+        paddings = paddings.to(self.device)
+        attn_weights = torch.where(time_mask, paddings, attn_weights)  # True:pick padding
+        attn_weights = torch.where(attn_mask, paddings, attn_weights)  # enforcing causality
+        attn_weights = self.softmax(attn_weights)
+        # 根据注意力权重对偏好矩阵进行聚合
+        outputs = attn_weights.matmul(V)
+        return outputs
+
+
 class IntervalAwareTransformer(nn.Module):
-    def __init__(self, num_poi, num_cat, nhid, batch_size, device, dropout, user_dim, max_len, nlayer):
+    def __init__(self, num_poi, nhid, batch_size, device, dropout, max_len, nlayer):
         super(IntervalAwareTransformer, self).__init__()
         self.num_poi = num_poi
         self.device = device
-        self.decoder_poi=nn.Linear(nhid,num_poi)
-
+        self.decoder_poi = nn.Linear(nhid, num_poi)
 
         self.d_time_matrix_K_emb = torch.nn.Embedding(25, nhid)
         self.d_time_matrix_V_emb = torch.nn.Embedding(25, nhid)
         self.w_time_matrix_K_emb = torch.nn.Embedding(8, nhid)
         self.w_time_matrix_V_emb = torch.nn.Embedding(8, nhid)
-
 
         self.d_time_matrix_K_dropout = torch.nn.Dropout(p=dropout)
         self.d_time_matrix_V_dropout = torch.nn.Dropout(p=dropout)
@@ -545,7 +574,7 @@ class IntervalAwareTransformer(nn.Module):
         self.forward_layers = torch.nn.ModuleList()
 
         self.last_layernorm = torch.nn.LayerNorm(nhid, eps=1e-8)
-
+        self.softAttention = softAttention(nhid=nhid, device=device, dropout_rate=dropout)
         for _ in range(nlayer):
             new_attn_layernorm = torch.nn.LayerNorm(nhid, eps=1e-8)
             self.attention_layernorms.append(new_attn_layernorm)
@@ -561,10 +590,8 @@ class IntervalAwareTransformer(nn.Module):
             new_fwd_layer = PointWiseFeedForward(nhid, dropout)
             self.forward_layers.append(new_fwd_layer)
 
-
-    def forward(self,seqs, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
-                batch_label_w_matrices, batch_user_embedding,batch_seq_idxes):
-
+    def forward(self, seqs, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
+                batch_label_w_matrices, batch_user_embedding, batch_input_idxes, batch_label_idxes):
 
         d_time_matrix_K = self.d_time_matrix_K_emb(batch_input_h_matrices)
         d_time_matrix_V = self.d_time_matrix_V_emb(batch_input_h_matrices)
@@ -576,6 +603,10 @@ class IntervalAwareTransformer(nn.Module):
         w_time_matrix_K = self.w_time_matrix_K_dropout(w_time_matrix_K)
         w_time_matrix_V = self.w_time_matrix_V_dropout(w_time_matrix_V)
 
+        label_d_time_matrix_K = self.d_time_matrix_K_emb(batch_label_h_matrices)
+        label_d_time_matrix_K = self.d_time_matrix_K_dropout(d_time_matrix_K)
+        label_w_time_matrix_K = self.w_time_matrix_K_emb(batch_label_w_matrices)
+        label_w_time_matrix_K = self.w_time_matrix_K_dropout(w_time_matrix_K)
 
         # mask attn
         attention_mask = ~torch.tril(torch.ones((seqs.shape[1], seqs.shape[1]), dtype=torch.bool, device=self.device))
@@ -584,10 +615,10 @@ class IntervalAwareTransformer(nn.Module):
             timeline_mask[i, batch_seq_lens[i]:] = True
 
         for i in range(len(self.attention_layers)):
-
             mha_outputs = self.attention_layers[i](seqs,
                                                    timeline_mask, attention_mask,
-                                                   d_time_matrix_K, w_time_matrix_K,d_time_matrix_V,w_time_matrix_V,batch_seq_idxes)
+                                                   d_time_matrix_K, w_time_matrix_K, d_time_matrix_V, w_time_matrix_V,
+                                                   batch_input_idxes)
             seqs = seqs + mha_outputs
             # seqs = torch.transpose(seqs, 0, 1) # (T, N, C) -> (N, T, C)
 
@@ -596,12 +627,17 @@ class IntervalAwareTransformer(nn.Module):
             seqs = self.forward_layers[i](seqs)
             seqs *= ~timeline_mask.unsqueeze(-1)
 
-        log_feats = self.last_layernorm(seqs)
-        score=self.decoder_poi(log_feats)
+        feats = self.last_layernorm(seqs)
+
+        feats = self.softAttention(feats, label_d_time_matrix_K, label_w_time_matrix_K, batch_user_embedding,
+                                   timeline_mask, attention_mask, batch_input_idxes, batch_label_idxes)
+        score = self.decoder_poi(feats)
 
         return score
+
+
 class PointWiseFeedForward(torch.nn.Module):
-    def __init__(self, hidden_units, dropout_rate): # wried, why fusion X 2?
+    def __init__(self, hidden_units, dropout_rate):  # wried, why fusion X 2?
 
         super(PointWiseFeedForward, self).__init__()
 
@@ -613,6 +649,19 @@ class PointWiseFeedForward(torch.nn.Module):
 
     def forward(self, inputs):
         outputs = self.dropout2(self.conv2(self.relu(self.dropout1(self.conv1(inputs.transpose(-1, -2))))))
-        outputs = outputs.transpose(-1, -2) # as Conv1D requires (N, C, Length)
+        outputs = outputs.transpose(-1, -2)  # as Conv1D requires (N, C, Length)
         outputs += inputs
         return outputs
+
+
+class GRU(nn.Module):
+    def __init__(self, nhid, num_poi):
+        super().__init__()
+        self.gru = nn.GRU(input_size=nhid, hidden_size=nhid, batch_first=True)
+        self.linear = nn.Linear(in_features=nhid, out_features=num_poi)
+
+    def forward(self, seqs, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
+                batch_label_w_matrices, batch_user_embedding, batch_seq_idxes):
+        x, _ = self.gru(seqs)
+        x = self.linear(x)
+        return x

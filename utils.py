@@ -59,7 +59,17 @@ def evaluate(output, label, batch_len, N):
     return ndcg_score, hit_score
 
 
-
+def computeRePos(time_seq, time_span):
+    size = time_seq.shape[0]
+    time_matrix = np.zeros([size, size], dtype=np.int32)
+    for i in range(size):
+        for j in range(size):
+            span = abs(time_seq[i] - time_seq[j])
+            if span > time_span:
+                time_matrix[i][j] = time_span
+            else:
+                time_matrix[i][j] = span
+    return time_matrix
 
 def compute_relative_time_matrix(t1, t2,remainder):
     t1 = np.array(t1)

@@ -2,6 +2,7 @@
 import argparse
 
 import torch
+import os
 
 if torch.cuda.is_available():
     device = torch.device('cuda')
@@ -10,8 +11,8 @@ else:
 
 
 def parameter_parser():
-    parser = argparse.ArgumentParser(description="Run GETNext.")
-    parser.add_argument('--max-seq-len',type=int,default=100,help='max seq len')
+    parser = argparse.ArgumentParser(description="Run TSAN.")
+    parser.add_argument('--max-seq-len',type=int,default=50,help='max seq len')
     parser.add_argument('--seed',
                         type=int,
                         default=42,
@@ -23,14 +24,23 @@ def parameter_parser():
                         help='')
     parser.add_argument('--dataset',
                         type=str,
-                        default='dataset/dataset_tsmc2014/NYC.csv',
+                        default='dataset/gowalla/gowalla.csv',
                         help='dataset path')
 
     parser.add_argument('--embed-mode',
-                        type=str,default='poi',)
-    parser.add_argument('--pure-transformer',
+                        type=str,default='sage',)
+    parser.add_argument('--seq-mode',
+                        type=str, default='timeIntervalAwareTransformer',
+                        help='pureTransformer timeIntervalAwareTransformer GRU')
+    parser.add_argument('--use-cat-feat',
+                        type=bool,default=False)
+    parser.add_argument('--use-user-feat',
+                        type=bool,default=False)
+    parser.add_argument('--use-time-feat',
                         type=bool, default=False)
+
     parser.add_argument('--cpus',type=int,default=4)
+
     parser.add_argument('--geo-k',
                         type=int,
                         default=10,
@@ -51,21 +61,20 @@ def parameter_parser():
     # Model hyper-parameters
     parser.add_argument('--poi-id-dim',
                         type=int,
-                        default=48,
+                        default=96,
                         help='POI embedding dimensions')
     parser.add_argument('--poi-sage-dim',
                         type=int,
-                        default=48,
+                        default=96,
                         help='POI embedding dimensions')
-    parser.add_argument('--user-embed-dim',
-                        type=int,
-                        default=128,
-                        help='User embedding dimensions')
     parser.add_argument('--dropout',
                         type=float,
-                        default=0.3,
-                        help='Dropout rate for gru')
-
+                        default=0.2,
+                        help='Dropout rate for seq model')
+    parser.add_argument('--nlayer',
+                        type=int,
+                        default=2,
+                        help='layer for transformer')
 
     parser.add_argument('--time-embed-dim',
                         type=int,
