@@ -5,6 +5,7 @@ import math
 import os
 import pathlib
 import pickle
+import random
 import zipfile
 from pathlib import Path
 import multiprocessing
@@ -264,8 +265,18 @@ def train(args):
                 self.input_seq_w_timeMatrixes[index], self.label_seq_h_timeMatrixes[index],
                 self.label_seq_w_timeMatrixes[index])
 
+
+    # %% ====================== Define dataloader ======================
+    print('Prepare dataloader...')
+    train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'))
+    val_dataset = TrajectoryDatasetVal(df)
+    pois_not_visited_by_user = collections.defaultdict(list)
+    for k, v in pois_visited_by_user.items():
+        pois_not_visited_by_user[k] = list(pois_in_train.difference(v))
+
     def time_collate_fn(batch):
-        users, input_seqs, label_seqs, input_seq_h_matrices, input_seq_w_matrices, \
+        users, input_seqs, input_timebins, input_dt, input_time_idx, label_seqs, label_timebins, \
+            label_dt, label_time_idx, input_seq_h_matrices, input_seq_w_matrices, \
             label_seq_h_matrices, label_seq_w_matrices = zip(*batch)
         max_size = max([len(input_seq) for input_seq in input_seqs])
         input_seq_h_padded_matrices = [F.pad(matrix, (0, max_size - matrix.shape[0], 0, max_size - matrix.shape[1])) for
@@ -276,17 +287,16 @@ def train(args):
                                        matrix in label_seq_h_matrices]
         label_seq_w_padded_matrices = [F.pad(matrix, (0, max_size - matrix.shape[0], 0, max_size - matrix.shape[1])) for
                                        matrix in label_seq_w_matrices]
-        return list(zip(users, input_seqs, label_seqs, input_seq_h_padded_matrices, \
-                        input_seq_w_padded_matrices, label_seq_h_padded_matrices, label_seq_w_padded_matrices))
 
-    collate_fn = lambda x: x
-    if args.seq_mode == 'timeIntervalAwareTransformer':
-        collate_fn = time_collate_fn
-    # %% ====================== Define dataloader ======================
-    print('Prepare dataloader...')
-    train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'))
-    val_dataset = TrajectoryDatasetVal(df)
+        def process_list(user, lst):
+            neg = random.sample(pois_not_visited_by_user[user], len(lst))
+            return neg
 
+        # 对元组中的每个列表应用自定义函数
+        negs = tuple(process_list(user, lst) for user, lst in zip(users, label_seqs))
+        return list(zip(users, input_seqs, input_timebins, input_dt, input_time_idx, label_seqs, label_timebins, \
+                        label_dt, label_time_idx, input_seq_h_padded_matrices, input_seq_w_padded_matrices, \
+                        label_seq_h_padded_matrices, label_seq_w_padded_matrices, negs))
     val_loader = DataLoader(val_dataset,
                             batch_size=args.batch,
                             shuffle=False, drop_last=False,
