@@ -284,8 +284,8 @@ def train(args):
         collate_fn = time_collate_fn
     # %% ====================== Define dataloader ======================
     print('Prepare dataloader...')
-    train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'), args.val_num)
-    val_dataset = TrajectoryDatasetVal(df, args.val_num)
+    train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'))
+    val_dataset = TrajectoryDatasetVal(df)
 
     val_loader = DataLoader(val_dataset,
                             batch_size=args.batch,
