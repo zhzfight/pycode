@@ -121,6 +121,8 @@ def train(args):
             self.input_seqs = []
             self.input_timebins = []
             self.input_time_idx = []
+            self.dt_for_make_graph=[]
+            self.seq_for_make_graph=[]
             self.label_seqs = []
             self.label_timebins = []
             self.label_time_idx = []
@@ -138,11 +140,14 @@ def train(args):
                 d = user_df['hour_of_day'].to_list()
                 w = user_df['day_of_week'].to_list()
                 dt = user_df['date_time'].to_list()
+                self.dt_for_make_graph.append(dt[:-1])
+                self.seq_for_make_graph.append(poi_ids[:-1])
                 idx = [int(((each - dt[0]) / pd.Timedelta(minutes=15))) for each in dt]
                 self.users.append(user)
                 self.seq_lens.append(len(poi_ids) - 2)
                 paded_len = (max_len - 2) - (len(poi_ids) - 2)
                 input_seq = poi_ids[:-2]
+
                 input_seq.extend([0] * paded_len)
                 input_timebin = time_bins[:-2]
                 input_timebin.extend([0] * paded_len)
@@ -178,9 +183,9 @@ def train(args):
 
         def get_adj(self):
             adj = collections.defaultdict(dict)
-            for seq in self.input_seqs:
-                pois = [each[0] for each in seq]
-                dt = [each[4] for each in seq]
+            for datetime,seq in zip(self.dt_for_make_graph,self.seq_for_make_graph):
+                pois = [each for each in seq]
+                dt = [each for each in datetime]
                 for i in range(len(pois) - 1):
                     if dt[i + 1] - dt[i] < self.time_threshold:
                         if pois[i + 1] not in adj[pois[i]]:
