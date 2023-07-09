@@ -12,7 +12,7 @@ else:
 
 def parameter_parser():
     parser = argparse.ArgumentParser(description="Run TSAN.")
-    parser.add_argument('--max-seq-len',type=int,default=50,help='max seq len')
+    parser.add_argument('--max-len',type=int,default=50,help='max seq len')
     parser.add_argument('--seed',
                         type=int,
                         default=42,
@@ -26,14 +26,16 @@ def parameter_parser():
                         type=str,
                         default='dataset/gowalla/gowalla.csv',
                         help='dataset path')
+    parser.add_argument('--preprocess',
+                        type=int,
+                        default=21,
+                        help='11 tsmc nyc 12 tsmc tky 21 gowalla')
 
     parser.add_argument('--embed-mode',
-                        type=str,default='sage',)
+                        type=str,default='poi',)
     parser.add_argument('--seq-mode',
                         type=str, default='timeIntervalAwareTransformer',
                         help='pureTransformer timeIntervalAwareTransformer GRU')
-    parser.add_argument('--use-cat-feat',
-                        type=bool,default=False)
     parser.add_argument('--use-user-feat',
                         type=bool,default=False)
     parser.add_argument('--use-time-feat',
@@ -80,10 +82,6 @@ def parameter_parser():
                         type=int,
                         default=32,
                         help='Time embedding dimensions')
-    parser.add_argument('--cat-embed-dim',
-                        type=int,
-                        default=64,
-                        help='Category embedding dimensions')
     parser.add_argument('--time-loss-weight',
                         type=int,
                         default=10,
@@ -93,7 +91,7 @@ def parameter_parser():
     # Training hyper-parameters
     parser.add_argument('--batch',
                         type=int,
-                        default=40,
+                        default=200,
                         help='Batch size.')
     parser.add_argument('--epochs',
                         type=int,

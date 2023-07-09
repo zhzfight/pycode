@@ -71,11 +71,14 @@ def computeRePos(time_seq, time_span):
                 time_matrix[i][j] = span
     return time_matrix
 
-def compute_relative_time_matrix(t1, t2,remainder):
+def compute_relative_time_matrix(t1, t2,remainder,padded_size):
     t1 = np.array(t1)
     t2 = np.array(t2)
     matrix = (t1[:, None] - t2) % remainder + 1
-    return np.tril(matrix)
+    matrix=np.tril(matrix)
+
+    padded_matrix = np.pad(matrix, ((0, padded_size - matrix.shape[0]), (0, padded_size - matrix.shape[1])), 'constant')
+    return padded_matrix
 
 def split_list(a_list, x):
     # 计算每份的长度和余数

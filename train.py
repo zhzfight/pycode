@@ -33,19 +33,7 @@ import threading
 
 
 def train(args):
-    print(
-        "three mode you can choose,1.poi-sage 2.poi 3.sage\n"
-        "you can set mode through args.embed_mode.\n"
-        "three dataset you can choose in this code, the first is NYC used in GETNext,"
-        "But I think this is an overprocessed dataset. the second and third is NYC launched by Yang DingQi."
-        "this two dataset are very big, and For these two datasets, I didn’t do too much extra preprocessing."
-        "If you use the Sage mode, because GraphSAGE requires sampling, this will cause the program to run very slowly. "
-        "But this is because I used Manager().Queue in the producer-consumer model for inter-process communication, "
-        "and its performance is far inferior to that of multiprocessing.Queue. Because my implementation is not very "
-        "elegant, it causes multiprocessing.Queue to require many threads, which results in not enough threads when "
-        "there are many POIs. If the number of POIs is relatively small, the solution using multiprocessing.Queue has "
-        "a flying speed. If you need this, you can contact me."
-        'have a nice day.')
+    print("damn!!!\n")
     seq_mode = {'pureTransformer', 'timeIntervalAwareTransformer', 'GRU'}
     if args.seq_mode not in seq_mode:
         print('no sequence model is specified')
@@ -86,14 +74,10 @@ def train(args):
     # %% ====================== Load data ======================
     # Read check-in train data
     df = pd.read_csv(args.dataset)
-    df['POI_id'] = pd.factorize(df['POI_id'])[0]
-    df['user_id'] = pd.factorize(df['user_id'])[0]
+    df['POI_id'] = pd.factorize(df['POI_id'])[0]+1
+    df['user_id'] = pd.factorize(df['user_id'])[0]+1
     df['date_time'] = pd.to_datetime(df['date_time'])
     poi_num = len(set(df['POI_id'].to_list()))
-    if args.use_cat_feat:
-        df['POI_catid'] = pd.factorize(df['POI_catid'])[0]
-        cat_num = len(set(df['POI_catid'].to_list()))
-        poi2cat = df.set_index('POI_id')['POI_catid'].to_dict()
 
     user_num = len(set(df['user_id'].to_list()))
 
@@ -127,50 +111,70 @@ def train(args):
                             self.count_dict[node] += threshold
 
     pois_in_train = set()
+    pois_visited_by_user = collections.defaultdict(set)
 
     class TrajectoryDatasetTrain(Dataset):
-        def __init__(self, df, time_threshold):
+        def __init__(self, df, time_threshold, max_len):
             self.df = df.copy()
             self.users = []
+            self.seq_lens = []
             self.input_seqs = []
+            self.input_timebins = []
+            self.input_time_idx = []
             self.label_seqs = []
+            self.label_timebins = []
+            self.label_time_idx = []
             self.input_seq_w_timeMatrixes = []
-            self.input_seq_h_timeMatrixes = []
+            self.input_seq_d_timeMatrixes = []
             self.label_seq_w_timeMatrixes = []
-            self.label_seq_h_timeMatrixes = []
+            self.label_seq_d_timeMatrixes = []
             self.time_threshold = time_threshold
+
             for user in tqdm(set(df['user_id'].tolist())):
                 user_df = df[df['user_id'] == user]
                 user_df = user_df.sort_values(by='date_time')
                 poi_ids = user_df['POI_id'].to_list()
                 time_bins = user_df['hour_of_week'].to_list()
-                h = user_df['hour_of_day'].to_list()
+                d = user_df['hour_of_day'].to_list()
                 w = user_df['day_of_week'].to_list()
                 dt = user_df['date_time'].to_list()
                 idx = [int(((each - dt[0]) / pd.Timedelta(minutes=15))) for each in dt]
                 self.users.append(user)
-                self.input_seqs.append(list(
-                    zip(poi_ids[:-2], time_bins[:-2],
-                        h[:-2], w[:-2],
-                        dt[:-2], idx[:-2])))
-                input_h_matrix = compute_relative_time_matrix(h[:-2],
-                                                              h[:-2], 24)
+                self.seq_lens.append(len(poi_ids) - 2)
+                paded_len = (max_len - 2) - (len(poi_ids) - 2)
+                input_seq = poi_ids[:-2]
+                input_seq.extend([0] * paded_len)
+                input_timebin = time_bins[:-2]
+                input_timebin.extend([0] * paded_len)
+                input_time_idx = idx[:-2]
+                input_time_idx.extend([99999] * paded_len)
+                self.input_seqs.append(input_seq)
+                self.input_timebins.append(input_timebin)
+                self.input_time_idx.append(input_time_idx)
+                input_d_matrix = compute_relative_time_matrix(d[:-2],
+                                                              d[:-2], 24, (max_len - 2))
                 input_w_matrix = compute_relative_time_matrix(w[:-2],
-                                                              w[:-2], 7)
-                self.input_seq_h_timeMatrixes.append(torch.LongTensor(input_h_matrix))
-                self.input_seq_w_timeMatrixes.append(torch.LongTensor(input_w_matrix))
-                self.label_seqs.append(list(
-                    zip(poi_ids[1:-1], time_bins[1:-1],
-                        h[1:-1], w[1:-1],
-                        dt[1:-1], idx[1:-1])))
-                label_h_matrix = compute_relative_time_matrix(h[1:-1],
-                                                              h[1:-1], 24)
+                                                              w[:-2], 7, (max_len - 2))
+                self.input_seq_d_timeMatrixes.append(input_d_matrix)
+                self.input_seq_w_timeMatrixes.append(input_w_matrix)
+                label_seq = poi_ids[1:-1]
+                label_seq.extend([0] * paded_len)
+                label_timebin = time_bins[1:-1]
+                label_timebin.extend([0] * paded_len)
+                label_time_idx = idx[1:-1]
+                label_time_idx.extend([99999] * paded_len)
+                self.label_seqs.append(label_seq)
+                self.label_timebins.append(label_timebin)
+                self.label_time_idx.append(label_time_idx)
+                label_d_matrix = compute_relative_time_matrix(d[1:-1],
+                                                              d[1:-1], 24, (max_len - 2))
                 label_w_matrix = compute_relative_time_matrix(w[1:-1],
-                                                              w[1:-1], 7)
-                self.label_seq_h_timeMatrixes.append(torch.LongTensor(label_h_matrix))
-                self.label_seq_w_timeMatrixes.append(torch.LongTensor(label_w_matrix))
+                                                              w[1:-1], 7, (max_len - 2))
+                self.label_seq_d_timeMatrixes.append(label_d_matrix)
+                self.label_seq_w_timeMatrixes.append(label_w_matrix)
 
-                pois_in_train.update(poi_ids[:-2])
+                pois_in_train.update(poi_ids[:-1])
+                pois_visited_by_user[user].update(poi_ids[:-1])
 
         def get_adj(self):
             adj = collections.defaultdict(dict)
@@ -193,8 +197,8 @@ def train(args):
             # 根据poi_set中的poiid从df中筛选出对应的行
             selected_rows = df[df['POI_id'].isin(pois_in_train)]
             # 取出这些行中的lat和long列
-            pois= selected_rows['POI_id'].to_list()
-            geos = list(zip(selected_rows['longitude'].to_list(),selected_rows['latitude'].to_list()))
+            pois = selected_rows['POI_id'].to_list()
+            geos = list(zip(selected_rows['longitude'].to_list(), selected_rows['latitude'].to_list()))
             return pois, geos
 
         def __len__(self):
@@ -203,19 +207,28 @@ def train(args):
 
         def __getitem__(self, index):
             return (
-                self.users[index], self.input_seqs[index], self.label_seqs[index], self.input_seq_h_timeMatrixes[index],
-                self.input_seq_w_timeMatrixes[index], self.label_seq_h_timeMatrixes[index],
+                self.users[index], self.seq_lens[index], self.input_seqs[index], self.input_timebins[index],
+                self.input_time_idx[index],
+                self.label_seqs[index], self.label_timebins[index], self.label_time_idx[index],
+                self.input_seq_d_timeMatrixes[index],
+                self.input_seq_w_timeMatrixes[index], self.label_seq_d_timeMatrixes[index],
                 self.label_seq_w_timeMatrixes[index])
 
     class TrajectoryDatasetVal(Dataset):
-        def __init__(self, df):
+        def __init__(self, df, max_len):
             self.users = []
+
             self.input_seqs = []
+            self.seq_lens = []
+            self.input_timebins = []
+            self.input_time_idx = []
             self.label_seqs = []
+            self.label_timebins = []
+            self.label_time_idx = []
             self.input_seq_w_timeMatrixes = []
-            self.input_seq_h_timeMatrixes = []
+            self.input_seq_d_timeMatrixes = []
             self.label_seq_w_timeMatrixes = []
-            self.label_seq_h_timeMatrixes = []
+            self.label_seq_d_timeMatrixes = []
 
             for user in tqdm(set(df['user_id'].tolist())):
 
@@ -224,36 +237,50 @@ def train(args):
 
                 poi_ids = user_df['POI_id'].to_list()
                 time_bins = user_df['hour_of_week'].to_list()
-                h = user_df['hour_of_day'].to_list()
+                d = user_df['hour_of_day'].to_list()
                 w = user_df['day_of_week'].to_list()
                 dt = user_df['date_time'].to_list()
-
 
                 if poi_ids[-1] not in pois_in_train:
                     break
 
                 idx = [int(((each - dt[0]) / pd.Timedelta(minutes=15))) for each in dt]
+
                 self.users.append(user)
-                self.input_seqs.append(list(
-                    zip(poi_ids[:-1], time_bins[:-1],
-                        h[:-1], w[:-1],
-                        idx[:-1])))
-                input_h_matrix = compute_relative_time_matrix(h[:-1],
-                                                              h[:-1], 24)
+                self.seq_lens.append(len(poi_ids) - 1)
+                paded_len = (max_len - 1) - (len(poi_ids) - 1)
+                input_seq = poi_ids[:-1]
+                input_seq.extend([0] * paded_len)
+                input_timebin = time_bins[:-1]
+                input_timebin.extend([0] * paded_len)
+                input_time_idx = idx[:-1]
+                input_time_idx.extend([99999] * paded_len)
+                self.input_seqs.append(input_seq)
+                self.input_timebins.append(input_timebin)
+                self.input_time_idx.append(input_time_idx)
+
+                input_d_matrix = compute_relative_time_matrix(d[:-1],
+                                                              d[:-1], 24, (max_len - 1))
                 input_w_matrix = compute_relative_time_matrix(w[:-1],
-                                                              w[:-1], 7)
-                self.input_seq_h_timeMatrixes.append(torch.LongTensor(input_h_matrix))
-                self.input_seq_w_timeMatrixes.append(torch.LongTensor(input_w_matrix))
-                self.label_seqs.append(list(
-                    zip(poi_ids[1:], time_bins[1:],
-                        h[1:], w[1:],
-                        idx[1:])))
-                label_h_matrix = compute_relative_time_matrix(h[1:],
-                                                              h[1:], 24)
+                                                              w[:-1], 7, (max_len - 1))
+                self.input_seq_d_timeMatrixes.append(input_d_matrix)
+                self.input_seq_w_timeMatrixes.append(input_w_matrix)
+                label_seq = poi_ids[1:]
+                label_seq.extend([0] * paded_len)
+                label_timebin = time_bins[1:]
+                label_timebin.extend([0] * paded_len)
+                label_time_idx = idx[1:]
+                label_time_idx.extend([99999] * paded_len)
+                self.label_seqs.append(label_seq)
+                self.label_timebins.append(label_timebin)
+                self.label_time_idx.append(label_time_idx)
+
+                label_d_matrix = compute_relative_time_matrix(d[1:],
+                                                              d[1:], 24, (max_len - 1))
                 label_w_matrix = compute_relative_time_matrix(w[1:],
-                                                              w[1:], 7)
-                self.label_seq_h_timeMatrixes.append(torch.LongTensor(label_h_matrix))
-                self.label_seq_w_timeMatrixes.append(torch.LongTensor(label_w_matrix))
+                                                              w[1:], 7, (max_len - 1))
+                self.label_seq_d_timeMatrixes.append(label_d_matrix)
+                self.label_seq_w_timeMatrixes.append(label_w_matrix)
 
         def __len__(self):
             assert len(self.input_seqs) == len(self.label_seqs) == len(self.users)
@@ -261,52 +288,50 @@ def train(args):
 
         def __getitem__(self, index):
             return (
-                self.users[index], self.input_seqs[index], self.label_seqs[index], self.input_seq_h_timeMatrixes[index],
-                self.input_seq_w_timeMatrixes[index], self.label_seq_h_timeMatrixes[index],
+                self.users[index], self.seq_lens[index], self.input_seqs[index], self.input_timebins[index],
+                self.input_time_idx[index],
+                self.label_seqs[index], self.label_timebins[index], self.label_time_idx[index],
+                self.input_seq_d_timeMatrixes[index],
+                self.input_seq_w_timeMatrixes[index], self.label_seq_d_timeMatrixes[index],
                 self.label_seq_w_timeMatrixes[index])
-
 
     # %% ====================== Define dataloader ======================
     print('Prepare dataloader...')
-    train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'))
-    val_dataset = TrajectoryDatasetVal(df)
+    train_dataset = TrajectoryDatasetTrain(df, pd.Timedelta(6, unit='h'),args.max_len)
+    val_dataset = TrajectoryDatasetVal(df,args.max_len)
     pois_not_visited_by_user = collections.defaultdict(list)
     for k, v in pois_visited_by_user.items():
         pois_not_visited_by_user[k] = list(pois_in_train.difference(v))
 
     def time_collate_fn(batch):
-        users, input_seqs, input_timebins, input_dt, input_time_idx, label_seqs, label_timebins, \
-            label_dt, label_time_idx, input_seq_h_matrices, input_seq_w_matrices, \
-            label_seq_h_matrices, label_seq_w_matrices = zip(*batch)
-        max_size = max([len(input_seq) for input_seq in input_seqs])
-        input_seq_h_padded_matrices = [F.pad(matrix, (0, max_size - matrix.shape[0], 0, max_size - matrix.shape[1])) for
-                                       matrix in input_seq_h_matrices]
-        input_seq_w_padded_matrices = [F.pad(matrix, (0, max_size - matrix.shape[0], 0, max_size - matrix.shape[1])) for
-                                       matrix in input_seq_w_matrices]
-        label_seq_h_padded_matrices = [F.pad(matrix, (0, max_size - matrix.shape[0], 0, max_size - matrix.shape[1])) for
-                                       matrix in label_seq_h_matrices]
-        label_seq_w_padded_matrices = [F.pad(matrix, (0, max_size - matrix.shape[0], 0, max_size - matrix.shape[1])) for
-                                       matrix in label_seq_w_matrices]
+        users, seq_lens,input_seqs, input_timebins, input_time_idx, label_seqs, label_timebins, \
+            label_time_idx, input_seq_d_matrices, input_seq_w_matrices, \
+            label_seq_d_matrices, label_seq_w_matrices = map(list, zip(*batch))
 
         def process_list(user, lst):
             neg = random.sample(pois_not_visited_by_user[user], len(lst))
             return neg
 
+        input_seq_d_matrices=np.array(input_seq_d_matrices)
+        input_seq_w_matrices=np.array(input_seq_w_matrices)
+        label_seq_d_matrices=np.array(label_seq_d_matrices)
+        label_seq_w_matrices=np.array(label_seq_w_matrices)
         # 对元组中的每个列表应用自定义函数
-        negs = tuple(process_list(user, lst) for user, lst in zip(users, label_seqs))
-        return list(zip(users, input_seqs, input_timebins, input_dt, input_time_idx, label_seqs, label_timebins, \
-                        label_dt, label_time_idx, input_seq_h_padded_matrices, input_seq_w_padded_matrices, \
-                        label_seq_h_padded_matrices, label_seq_w_padded_matrices, negs))
+        negs = [process_list(user, lst) for user, lst in zip(users, label_seqs)]
+        return users,seq_lens, input_seqs, input_timebins, input_time_idx, label_seqs, label_timebins, \
+            label_time_idx, input_seq_d_matrices, input_seq_w_matrices, \
+            label_seq_d_matrices, label_seq_w_matrices, negs
+
     val_loader = DataLoader(val_dataset,
                             batch_size=args.batch,
                             shuffle=False, drop_last=False,
                             pin_memory=True, num_workers=args.workers,
-                            collate_fn=collate_fn)
+                            collate_fn=time_collate_fn)
     train_loader = DataLoader(train_dataset,
                               batch_size=args.batch,
                               shuffle=True, drop_last=False,
                               pin_memory=True, num_workers=args.workers,
-                              collate_fn=collate_fn)
+                              collate_fn=time_collate_fn)
 
     adj = None
     dis = None
@@ -381,10 +406,6 @@ def train(args):
     if args.use_time_feat:
         time_embed_model = TimeEmbeddings(args.time_embed_dim)
 
-    # %% Model4: Category embedding model
-    cat_embed_model = None
-    if args.use_cat_feat:
-        cat_embed_model = CategoryEmbeddings(cat_num, args.cat_embed_dim)
 
     # %% Model6: Sequence model
     poi_embed_dim = 0
@@ -393,8 +414,7 @@ def train(args):
     elif args.embed_mode == 'poi':
         poi_embed_dim = args.poi_id_dim
     args.seq_input_embed = poi_embed_dim
-    if args.use_cat_feat:
-        args.seq_input_embed += args.cat_embed_dim
+
     if args.use_time_feat:
         args.seq_input_embed += args.time_embed_dim
     user_embed_model = None
@@ -415,7 +435,7 @@ def train(args):
                                              batch_size=args.batch,
                                              device=args.device,
                                              dropout=args.dropout,
-                                             max_len=args.max_seq_len, nlayer=args.nlayer)
+                                             max_len=args.max_len, nlayer=args.nlayer)
     elif args.seq_mode == 'GRU':
         seq_model = GRU(nhid=args.seq_input_embed, num_poi=poi_num)
 
@@ -424,8 +444,6 @@ def train(args):
     if args.seq_mode == 'timeIntervalAwareTransformer':
         parameter_list += list(user_embed_model.parameters())
 
-    if args.use_cat_feat:
-        parameter_list += list(cat_embed_model.parameters())
 
     if args.use_time_feat:
         parameter_list += list(time_embed_model.parameters())
@@ -433,40 +451,8 @@ def train(args):
                            lr=args.lr,
                            weight_decay=args.weight_decay)
 
-    criterion_poi = nn.CrossEntropyLoss(ignore_index=-1)  # -1 is padding
+    criterion_poi = nn.CrossEntropyLoss(ignore_index=-1)
 
-    lr_scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, 'min', verbose=True, factor=args.lr_scheduler_factor)
-
-    # %% Tool functions for training
-    def input_traj_to_embeddings(sample, mode, train_or_eval, use_cat_feat=False,
-                                 use_time_feat=False, poi_sage_embeddings=None,
-                                 embedding_index=None):
-        input_seq = [each[0] for each in sample[1]]
-        input_seq_cat = None
-        input_seq_time = None
-        if use_cat_feat:
-            input_seq_cat = [poi2cat[each] for each in input_seq]
-        if use_time_feat:
-            input_seq_time = [each[1] for each in sample[1]]
-        if mode == 'sage':
-            if train_or_eval == 'eval':
-                poi_idxs = input_seq
-            else:
-                poi_idxs = [embedding_index + idx for idx in range(len(input_seq))]
-            poi_embed = poi_sage_embeddings[poi_idxs]
-        else:
-            poi_embed = poi_embed_model(torch.LongTensor(input_seq).to(args.device))
-
-        embedded = poi_embed
-        if use_cat_feat:
-            catid_embed = cat_embed_model(torch.LongTensor(input_seq_cat).to(args.device))
-            embedded = torch.cat((embedded, catid_embed), dim=-1)
-        if use_time_feat:
-            timebin_embed = time_embed_model(torch.LongTensor(input_seq_time).to(args.device))
-            embedded = torch.cat((embedded, timebin_embed), dim=-1)
-
-        return embedded
 
     # %% ====================== Train ======================
 
@@ -475,8 +461,6 @@ def train(args):
         user_embed_model = user_embed_model.to(device=args.device)
     if args.use_time_feat:
         time_embed_model = time_embed_model.to(device=args.device)
-    if args.use_cat_feat:
-        cat_embed_model = cat_embed_model.to(device=args.device)
     seq_model = seq_model.to(device=args.device)
 
     # %% Loop epoch
@@ -510,8 +494,6 @@ def train(args):
             user_embed_model.train()
         if args.use_time_feat:
             time_embed_model.train()
-        if args.use_cat_feat:
-            cat_embed_model.train()
         seq_model.train()
         train_batches_top1_acc_list = []
         train_batches_top5_acc_list = []
@@ -523,75 +505,35 @@ def train(args):
         train_batches_ndcg_list = []
         train_batches_hit_list = []
 
-        poi_sage_embeddings = None
-        embedding_index = 0
 
-        # Loop batch
-        for b_idx, batch in enumerate(train_loader):
-            # For padding
+        for b_idx, (users,seq_lens, input_seqs, input_timebins, input_time_idxes, label_seqs, label_timebins, \
+                label_time_idxes, input_seq_d_matrices, input_seq_w_matrices, \
+                label_seq_d_matrices, label_seq_w_matrices, negs) in enumerate(train_loader):
 
-            batch_seq_lens = []
-            batch_seq_embeds = []
-            batch_label_seqs = []
-            batch_user = []
-            batch_input_h_matrices = []
-            batch_input_w_matrices = []
-            batch_label_h_matrices = []
-            batch_label_w_matrices = []
-            batch_input_idxes = []
-            batch_label_idxes = []
-            if args.embed_mode == 'sage':
-                pois = [each[0] for sample in batch for each in sample[1]]
-                poi_sage_embeddings = poi_embed_model(torch.tensor(pois).to(args.device))
-            # Convert input seq to embeddings
-            for sample in batch:
-                batch_user.append(sample[0])
-                batch_input_h_matrices.append(sample[3])
-                batch_input_w_matrices.append(sample[4])
-                batch_label_h_matrices.append(sample[5])
-                batch_label_w_matrices.append(sample[6])
-                label_seq = [each[0] for each in sample[2]]
-                input_seq_idx = [each[5] for each in sample[1]]
-                label_seq_idx = [each[5] for each in sample[2]]
-                batch_input_idxes.append(torch.FloatTensor(input_seq_idx).to(args.device))
-                batch_label_idxes.append(torch.FloatTensor(label_seq_idx).to(args.device))
-                batch_label_seqs.append(torch.LongTensor(label_seq).to(args.device))
+            x=poi_embed_model(torch.LongTensor(input_seqs).to(args.device),seq_lens)
+            if args.use_time_feat:
+                timebin_embed = time_embed_model(torch.LongTensor(input_timebins).to(args.device))
+                x = torch.cat((x, timebin_embed), dim=-1)
 
-                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, 'train',
-                                                           use_cat_feat=args.use_cat_feat,
-                                                           use_time_feat=args.use_time_feat,
-                                                           poi_sage_embeddings=poi_sage_embeddings,
-                                                           embedding_index=embedding_index)
-                batch_seq_embeds.append(input_seq_embed)
-                batch_seq_lens.append(len(label_seq))
-                embedding_index += len(label_seq)
-            embedding_index = 0
-            # Pad seqs for batch training
-            batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
-            label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
-            batch_padded_input_idxes = pad_sequence(batch_input_idxes, batch_first=True, padding_value=99999).to(
-                args.device)
-            batch_padded_label_idxes = pad_sequence(batch_label_idxes, batch_first=True, padding_value=99999).to(
-                args.device)
-            batch_user_embedding = None
+            user_embeddings = None
             if args.seq_mode == 'timeIntervalAwareTransformer':
-                batch_user_embedding = user_embed_model(torch.LongTensor(batch_user).to(args.device))
+                user_embeddings = user_embed_model(torch.LongTensor(users).to(args.device))
 
-            # Feedforward
-            if args.seq_mode == 'timeIntervalAwareTransformer':
-                batch_input_h_matrices = torch.stack(batch_input_h_matrices).to(args.device)
-                batch_input_w_matrices = torch.stack(batch_input_w_matrices).to(args.device)
-                batch_label_h_matrices = torch.stack(batch_label_h_matrices).to(args.device)
-                batch_label_w_matrices = torch.stack(batch_label_w_matrices).to(args.device)
+            input_time_idxes = torch.FloatTensor(input_time_idxes).to(args.device)
+            label_time_idxes = torch.FloatTensor(label_time_idxes).to(args.device)
+            input_seq_d_matrices = torch.LongTensor(input_seq_d_matrices).to(args.device)
+            input_seq_w_matrices = torch.LongTensor(input_seq_w_matrices).to(args.device)
+            label_seq_d_matrices = torch.LongTensor(label_seq_d_matrices).to(args.device)
+            label_seq_w_matrices = torch.LongTensor(label_seq_w_matrices).to(args.device)
 
-            x = batch_padded.to(device=args.device)
-            y_poi = label_padded_poi.to(device=args.device)
-            y_pred_poi = seq_model(x, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices,
-                                   batch_label_h_matrices,
-                                   batch_label_w_matrices, batch_user_embedding, batch_padded_input_idxes,
-                                   batch_padded_label_idxes)
 
-            loss = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
+            preference = seq_model(x, seq_lens, input_seq_d_matrices, input_seq_w_matrices,
+                                   label_seq_d_matrices,
+                                   label_seq_w_matrices, user_embeddings, input_time_idxes,
+                                   label_time_idxes)
+            label_seqs_for_loss=torch.LongTensor(label_seqs).to(args.device)
+            label_seqs_for_loss-=1
+            loss = criterion_poi(preference.transpose(1, 2), label_seqs_for_loss)
 
             optimizer.zero_grad()
             loss.backward()
@@ -604,10 +546,10 @@ def train(args):
             top20_acc = 0
             mAP20 = 0
             mrr = 0
-            batch_label_pois = y_poi.detach().cpu().numpy()
-            batch_pred_pois = y_pred_poi.detach().cpu().numpy()
+            batch_label_pois = label_seqs_for_loss.detach().cpu().numpy()
+            batch_pred_pois = preference.detach().cpu().numpy()
 
-            for label_pois, pred_pois, seq_len in zip(batch_label_pois, batch_pred_pois, batch_seq_lens):
+            for label_pois, pred_pois, seq_len in zip(batch_label_pois, batch_pred_pois, seq_lens):
                 label_pois = label_pois[:seq_len]  # shape: (seq_len, )
                 pred_pois = pred_pois[:seq_len, :]  # shape: (seq_len, num_poi)
                 top1_acc += top_k_acc_last_timestep(label_pois, pred_pois, k=1)
@@ -623,7 +565,7 @@ def train(args):
             train_batches_mAP20_list.append(mAP20 / len(batch_label_pois))
             train_batches_mrr_list.append(mrr / len(batch_label_pois))
 
-            ndcg_list, hit_list = evaluate(batch_pred_pois, batch_label_pois, batch_seq_lens, 10)
+            ndcg_list, hit_list = evaluate(batch_pred_pois, batch_label_pois, seq_lens, 10)
             batch_ndcg = np.mean(ndcg_list)
             batch_hit = np.mean(hit_list)
             train_batches_ndcg_list.append(batch_ndcg)
@@ -644,12 +586,13 @@ def train(args):
                              f'train_move_top20_acc:{np.mean(train_batches_top20_acc_list):.4f}\n'
                              f'train_move_mAP20:{np.mean(train_batches_mAP20_list):.4f}\n'
                              f'train_move_MRR:{np.mean(train_batches_mrr_list):.4f}\n'
-                             f'traj_id:{batch[sample_idx][0]}\n'
-                             f'input_seq: {batch[sample_idx][1]}\n'
-                             f'label_seq:{batch[sample_idx][2]}\n'
-                             f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n' +
+                             f'traj_id:{users[sample_idx]}\n'
+                             f'input_seq: {input_seqs[sample_idx][:seq_lens[sample_idx]]}\n'
+                             f'label_seq:{label_seqs[sample_idx][:seq_lens[sample_idx]]}\n'
+                             f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:seq_lens[sample_idx]])} \n' +
                              '=' * 100)
-
+        if epoch%5!=0:
+            continue
         # train end --------------------------------------------------------------------------------------------------------
 
         poi_embed_model.eval()
@@ -657,8 +600,6 @@ def train(args):
             user_embed_model.eval()
         if args.use_time_feat:
             time_embed_model.eval()
-        if args.use_cat_feat:
-            cat_embed_model.eval()
         seq_model.eval()
         val_batches_top1_acc_list = []
         val_batches_top5_acc_list = []
@@ -670,70 +611,42 @@ def train(args):
         val_batches_ndcg_list = []
         val_batches_hit_list = []
 
-        poi_sage_embeddings = None
 
+        embed_table=None
         if args.embed_mode == 'sage':
-            pois = [n for n in range(poi_num)]
-            poi_sage_embeddings = poi_embed_model(torch.tensor(pois).to(args.device))
-        for vb_idx, batch in enumerate(val_loader):
+            embed_table = poi_embed_model(None)
+        elif args.embed_mode=='poi':
+            embed_table=poi_embed_model.weight()
+        for v_idx, (users,seq_lens, input_seqs, input_timebins, input_time_idxes, label_seqs, label_timebins, \
+                label_time_idxes, input_seq_d_matrices, input_seq_w_matrices, \
+                label_seq_d_matrices, label_seq_w_matrices, negs) in enumerate(val_loader):
 
-            # For padding
-            batch_seq_lens = []
-            batch_seq_embeds = []
-            batch_label_seqs = []
-            batch_user = []
-            batch_input_h_matrices = []
-            batch_input_w_matrices = []
-            batch_label_h_matrices = []
-            batch_label_w_matrices = []
-            batch_input_idxes = []
-            batch_label_idxes = []
-            # Convert input seq to embeddings
-            for sample in batch:
-                batch_user.append(sample[0])
-                batch_input_h_matrices.append(sample[3])
-                batch_input_w_matrices.append(sample[4])
-                batch_label_h_matrices.append(sample[5])
-                batch_label_w_matrices.append(sample[6])
-                label_seq = [each[0] for each in sample[2]]
-                input_seq_idx = [each[4] for each in sample[1]]
-                label_seq_idx = [each[4] for each in sample[2]]
-                batch_input_idxes.append(torch.FloatTensor(input_seq_idx).to(args.device))
-                batch_label_idxes.append(torch.FloatTensor(label_seq_idx).to(args.device))
-                batch_label_seqs.append(torch.LongTensor(label_seq).to(args.device))
+            x=embed_table[input_seqs]
 
-                input_seq_embed = input_traj_to_embeddings(sample, args.embed_mode, 'eval',
-                                                           use_cat_feat=args.use_cat_feat,
-                                                           use_time_feat=args.use_time_feat,
-                                                           poi_sage_embeddings=poi_sage_embeddings)
-                batch_seq_embeds.append(input_seq_embed)
-                batch_seq_lens.append(len(label_seq))
-
-            # Pad seqs for batch training
-            batch_padded = pad_sequence(batch_seq_embeds, batch_first=True, padding_value=-1)
-            label_padded_poi = pad_sequence(batch_label_seqs, batch_first=True, padding_value=-1)
-            batch_padded_input_idxes = pad_sequence(batch_input_idxes, batch_first=True, padding_value=99999).to(
-                args.device)
-            batch_padded_label_idxes = pad_sequence(batch_label_idxes, batch_first=True, padding_value=99999).to(
-                args.device)
-            batch_user_embedding = None
+            if args.use_time_feat:
+                timebin_embed = time_embed_model(torch.LongTensor(input_timebins).to(args.device))
+                x = torch.cat((x, timebin_embed), dim=-1)
+            user_embeddings = None
             if args.seq_mode == 'timeIntervalAwareTransformer':
-                batch_user_embedding = user_embed_model(torch.LongTensor(batch_user).to(args.device))
-            if args.seq_mode == 'timeIntervalAwareTransformer':
-                batch_input_h_matrices = torch.stack(batch_input_h_matrices).to(args.device)
-                batch_input_w_matrices = torch.stack(batch_input_w_matrices).to(args.device)
-                batch_label_h_matrices = torch.stack(batch_label_h_matrices).to(args.device)
-                batch_label_w_matrices = torch.stack(batch_label_w_matrices).to(args.device)
-            # Feedforward
-            x = batch_padded.to(device=args.device)
-            y_poi = label_padded_poi.to(device=args.device)
-            y_pred_poi = seq_model(x, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices,
-                                   batch_label_h_matrices,
-                                   batch_label_w_matrices, batch_user_embedding, batch_padded_input_idxes,
-                                   batch_padded_label_idxes)
+                user_embeddings = user_embed_model(torch.LongTensor(users).to(args.device))
+
+            input_time_idxes = torch.FloatTensor(input_time_idxes).to(args.device)
+            label_time_idxes = torch.FloatTensor(label_time_idxes).to(args.device)
+            input_seq_d_matrices = torch.LongTensor(input_seq_d_matrices).to(args.device)
+            input_seq_w_matrices = torch.LongTensor(input_seq_w_matrices).to(args.device)
+            label_seq_d_matrices = torch.LongTensor(label_seq_d_matrices).to(args.device)
+            label_seq_w_matrices = torch.LongTensor(label_seq_w_matrices).to(args.device)
+
+
+            label_seqs_for_loss=torch.LongTensor(label_seqs).to(args.device)
+            label_seqs_for_loss-=1
+            preference = seq_model(x, seq_lens, input_seq_d_matrices, input_seq_w_matrices,
+                                   label_seq_d_matrices,
+                                   label_seq_w_matrices, user_embeddings, input_time_idxes,
+                                   label_time_idxes)
 
             # Calculate loss
-            loss = criterion_poi(y_pred_poi.transpose(1, 2), y_poi)
+            loss = criterion_poi(preference.transpose(1, 2),label_seqs_for_loss)
             # Performance measurement
             top1_acc = 0
             top5_acc = 0
@@ -742,9 +655,9 @@ def train(args):
             mAP20 = 0
             mrr = 0
 
-            batch_label_pois = y_poi.detach().cpu().numpy()
-            batch_pred_pois = y_pred_poi.detach().cpu().numpy()
-            for label_pois, pred_pois, seq_len in zip(batch_label_pois, batch_pred_pois, batch_seq_lens):
+            batch_label_pois = label_seqs_for_loss.detach().cpu().numpy()
+            batch_pred_pois = preference.detach().cpu().numpy()
+            for label_pois, pred_pois, seq_len in zip(batch_label_pois, batch_pred_pois, seq_lens):
                 label_pois = label_pois[:seq_len]  # shape: (seq_len, )
                 pred_pois = pred_pois[:seq_len, :]  # shape: (seq_len, num_poi)
                 top1_acc += top_k_acc_last_timestep(label_pois, pred_pois, k=1)
@@ -760,7 +673,7 @@ def train(args):
             val_batches_mAP20_list.append(mAP20 / len(batch_label_pois))
             val_batches_mrr_list.append(mrr / len(batch_label_pois))
 
-            ndcg_list, hit_list = evaluate(batch_pred_pois, batch_label_pois, batch_seq_lens, 10)
+            ndcg_list, hit_list = evaluate(batch_pred_pois, batch_label_pois, seq_lens, 10)
             val_batches_loss_list.append(loss.detach().cpu().numpy())
             batch_ndcg = np.mean(ndcg_list)
             batch_hit = np.mean(hit_list)
@@ -768,9 +681,9 @@ def train(args):
             val_batches_hit_list.append(batch_hit)
 
             # Report validation progress
-            if (vb_idx % (10)) == 0:
+            if (v_idx % (10)) == 0:
                 sample_idx = 0
-                logging.info(f'Epoch:{epoch}, batch:{vb_idx}, '
+                logging.info(f'Epoch:{epoch}, batch:{v_idx}, '
                              f'val_batch_loss:{loss.item():.2f}, '
                              f'val_move_loss:{np.mean(val_batches_loss_list):.2f} \n'
                              f'val_ndcg:{batch_ndcg:.4f}\n'
@@ -781,10 +694,10 @@ def train(args):
                              f'val_move_top20_acc:{np.mean(val_batches_top20_acc_list):.4f} \n'
                              f'val_move_mAP20:{np.mean(val_batches_mAP20_list):.4f} \n'
                              f'val_move_MRR:{np.mean(val_batches_mrr_list):.4f} \n'
-                             f'traj_id:{batch[sample_idx][0]}\n'
-                             f'input_seq:{batch[sample_idx][1]}\n'
-                             f'label_seq:{batch[sample_idx][2]}\n'
-                             f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:batch_seq_lens[sample_idx]])} \n' +
+                             f'traj_id:{users[sample_idx]}\n'
+                             f'input_seq:{input_seqs[sample_idx][:seq_lens[sample_idx]]}\n'
+                             f'label_seq:{label_seqs[sample_idx][:seq_lens[sample_idx]]}\n'
+                             f'pred_seq_poi:{list(np.argmax(batch_pred_pois, axis=2)[sample_idx][:seq_lens[sample_idx]])} \n' +
                              '=' * 100)
         # valid end --------------------------------------------------------------------------------------------------------
 
@@ -829,11 +742,7 @@ def train(args):
         val_epochs_mAP20_list.append(epoch_val_mAP20)
         val_epochs_mrr_list.append(epoch_val_mrr)
 
-        # Monitor loss and score
-        monitor_loss = epoch_val_loss
 
-        # Learning rate schuduler
-        lr_scheduler.step(monitor_loss)
         # Print epoch results
         logging.info(f"Epoch {epoch}/{args.epochs}\n"
                      f"train_loss:{epoch_train_loss:.4f}, "

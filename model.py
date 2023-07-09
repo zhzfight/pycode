@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import numpy as np
 from torch.nn import Parameter
 from math import pi, log
-
+from torch.nn.utils.rnn import pad_sequence
 from einops import rearrange, repeat
 import queue
 from utils import sample_neighbors
@@ -15,16 +15,18 @@ from utils import sample_neighbors
 class PoiEmbeddings(nn.Module):
     def __init__(self, num_pois, embedding_dim):
         super(PoiEmbeddings, self).__init__()
-        self.poi_embedding = nn.Embedding(num_embeddings=num_pois, embedding_dim=embedding_dim)
+        self.poi_embedding = nn.Embedding(num_embeddings=num_pois+1, embedding_dim=embedding_dim,padding_idx=0)
 
-    def forward(self, poi_idx):
+    def forward(self, poi_idx,seq_lens=None):
         return self.poi_embedding(poi_idx)
+    def weight(self):
+        return self.poi_embedding.weight
 
 
 class TimeEmbeddings(nn.Module):
     def __init__(self, embedding_dim):
         super(TimeEmbeddings, self).__init__()
-        self.time_embedding = nn.Embedding(num_embeddings=24 * 7, embedding_dim=embedding_dim)
+        self.time_embedding = nn.Embedding(num_embeddings=24 * 7+1, embedding_dim=embedding_dim,padding_idx=0)
 
     def forward(self, time_idx):
         return self.time_embedding(time_idx)
@@ -35,8 +37,8 @@ class UserEmbeddings(nn.Module):
         super(UserEmbeddings, self).__init__()
 
         self.user_embedding = nn.Embedding(
-            num_embeddings=num_users,
-            embedding_dim=embedding_dim,
+            num_embeddings=num_users+1,
+            embedding_dim=embedding_dim,padding_idx=0
         )
 
     def forward(self, user_idx):
@@ -385,8 +387,11 @@ class GraphSAGE(nn.Module):
     def __init__(self, poi_num, input_dim, embed_dim, device, restart_prob, num_walks, dropout, adj_dicts, dis_dicts,
                  adj_list, dis_list):
         super(GraphSAGE, self).__init__()
-        self.id2node = nn.Embedding(poi_num, input_dim)
+        self.id2node = nn.Embedding(poi_num+1, input_dim,padding_idx=0)
         self.device = device
+        self.poi_num=poi_num
+        self.all_nodes=torch.LongTensor([i for i in range(1,self.poi_num+1)]).to(device)
+        self.embed_dim=embed_dim
         self.layer2 = SageLayer(id2feat=lambda nodes: self.id2node(nodes),
                                 restart_prob=restart_prob, num_walks=num_walks, input_dim=input_dim,
                                 output_dim=embed_dim, device=device, dropout=dropout, id=2, adj_dicts=adj_dicts,
@@ -396,9 +401,18 @@ class GraphSAGE(nn.Module):
                                 output_dim=embed_dim, device=device, dropout=dropout, id=1, adj_dicts=adj_dicts,
                                 dis_dicts=dis_dicts, adj_list=adj_list, dis_list=dis_list)
 
-    def forward(self, nodes):
-        feats = self.layer1(nodes)
-        return feats
+    def forward(self, nodes,seq_lens=None):
+        if seq_lens==None:
+            embed_table = self.layer1(self.all_nodes)
+            zero_row = torch.zeros(1, self.embed_dim)
+            embed_table = torch.cat([zero_row, embed_table], dim=0)
+            return embed_table
+        else:
+            nodes=nodes[nodes!=0]
+            feats = self.layer1(nodes)
+            embedded_split = torch.split(feats, seq_lens)
+            padded_embedded = pad_sequence(embedded_split, batch_first=True)
+            return padded_embedded
 
 
 class TransformerModel(nn.Module):
@@ -467,50 +481,28 @@ class Attention(nn.Module):
         self.device = device
         self.rotary_embed = RotaryEmbedding(dim=nhid, device=device)
 
-    def forward(self, seqs, time_mask, attn_mask, d_time_matrix_K, w_time_matrix_K, d_time_matrix_V,
-                w_time_matrix_V, batch_seq_idxes):
-        '''
-        Q = self.Q_w(seqs)
-        K = self.K_w(seqs)
-        V = self.V_w(seqs)
-        Q = self.rotary_embed.rotate_queries_or_keys(Q, batch_seq_idxes)
-        K = self.rotary_embed.rotate_queries_or_keys(K, batch_seq_idxes)
-        attn_weights = Q.matmul(torch.transpose(K, 1, 2))
-        attn_weights += d_time_matrix_K.matmul(Q.unsqueeze(-1)).squeeze(-1)
-        attn_weights += w_time_matrix_K.matmul(Q.unsqueeze(-1)).squeeze(-1)
-        '''
+    def forward(self, seqs, time_mask, attn_mask, d_time_matrix_K, w_time_matrix_K, input_time_idxes):
 
-        Q = K = self.rotary_embed.rotate_queries_or_keys(seqs, batch_seq_idxes)
+        Q = K = self.rotary_embed.rotate_queries_or_keys(seqs, input_time_idxes)
         Q, V = self.Q_w(Q), self.V_w(seqs)
         K_expanded = K.unsqueeze(2).repeat(1, 1, K.shape[1], 1).transpose(2, 1)
         K_d_w = K_expanded + d_time_matrix_K + w_time_matrix_K
         K_d_w = self.K_w(K_d_w)
+
+
         attn_weights = Q.unsqueeze(2).matmul(K_d_w.transpose(3, 2)).squeeze(2)
-
-        # seq length adaptive scaling
         attn_weights = attn_weights / (K.shape[-1] ** 0.5)
-
-        # key masking, -2^32 lead to leaking, inf lead to nan
-        # 0 * inf = nan, then reduce_sum([nan,...]) = nan
-
-        # fixed a bug pointed out in https://github.com/pmixer/TiSASRec.pytorch/issues/2
-        # time_mask = time_mask.unsqueeze(-1).expand(attn_weights.shape[0], -1, attn_weights.shape[-1])
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, attn_weights.shape[-1])
         attn_mask = attn_mask.unsqueeze(0).expand(attn_weights.shape[0], -1, -1)
         paddings = torch.ones(attn_weights.shape) * (-2 ** 32 + 1)  # -1e23 # float('-inf')
         paddings = paddings.to(self.device)
         attn_weights = torch.where(time_mask, paddings, attn_weights)  # True:pick padding
         attn_weights = torch.where(attn_mask, paddings, attn_weights)  # enforcing causality
-
-        attn_weights = self.softmax(attn_weights)  # code as below invalids pytorch backward rules
-        # attn_weights = torch.where(time_mask, paddings, attn_weights) # weird query mask in tf impl
-        # https://discuss.pytorch.org/t/how-to-set-nan-in-tensor-to-0/3918/4
-        # attn_weights[attn_weights != attn_weights] = 0 # rm nan for -inf into softmax case
+        attn_weights = self.softmax(attn_weights)
         attn_weights = self.dropout(attn_weights)
 
+
         outputs = attn_weights.matmul(V)
-        # outputs += attn_weights.unsqueeze(2).matmul(d_time_matrix_V).reshape(outputs.shape).squeeze(2)
-        # outputs += attn_weights.unsqueeze(2).matmul(w_time_matrix_V).reshape(outputs.shape).squeeze(2)
 
         return outputs
 
@@ -527,18 +519,18 @@ class softAttention(nn.Module):
         self.dropout = nn.Dropout(p=dropout_rate)
 
     def forward(self, feats, label_d_time_matrix_K, label_w_time_matrix_K, batch_user_embedding, time_mask, attn_mask,
-                batch_input_idxes, batch_label_idxes):
+                input_time_idxes, label_time_idxes):
         batch_user_embedding = batch_user_embedding.unsqueeze(1).repeat(1, feats.shape[1], 1)
-        batch_user_embedding = self.rotary_embed.rotate_queries_or_keys(batch_user_embedding, batch_label_idxes)
+        batch_user_embedding = self.rotary_embed.rotate_queries_or_keys(batch_user_embedding, label_time_idxes)
         Q, V = self.Q_w(batch_user_embedding), self.V_w(feats)
-        K = self.rotary_embed.rotate_queries_or_keys(feats, batch_input_idxes)
+        K = self.rotary_embed.rotate_queries_or_keys(feats, input_time_idxes)
         K_expanded = K.unsqueeze(2).repeat(1, 1, K.shape[1], 1).transpose(2, 1)
         K_d_w = K_expanded + label_d_time_matrix_K + label_w_time_matrix_K
         K_d_w = self.K_w(K_d_w)
+
+
         attn_weights = Q.unsqueeze(2).matmul(K_d_w.transpose(3, 2)).squeeze(2)
-
         attn_weights = attn_weights / (feats.shape[-1] ** 0.5)
-
         time_mask = time_mask.unsqueeze(-1).expand(-1, -1, attn_weights.shape[-1])
         attn_mask = attn_mask.unsqueeze(0).expand(attn_weights.shape[0], -1, -1)
         paddings = torch.ones(attn_weights.shape) * (-2 ** 32 + 1)  # -1e23 # float('-inf')
@@ -546,7 +538,8 @@ class softAttention(nn.Module):
         attn_weights = torch.where(time_mask, paddings, attn_weights)  # True:pick padding
         attn_weights = torch.where(attn_mask, paddings, attn_weights)  # enforcing causality
         attn_weights = self.softmax(attn_weights)
-        # 根据注意力权重对偏好矩阵进行聚合
+
+
         outputs = attn_weights.matmul(V)
         return outputs
 
@@ -559,14 +552,10 @@ class IntervalAwareTransformer(nn.Module):
         self.decoder_poi = nn.Linear(nhid, num_poi)
 
         self.d_time_matrix_K_emb = torch.nn.Embedding(25, nhid)
-        self.d_time_matrix_V_emb = torch.nn.Embedding(25, nhid)
         self.w_time_matrix_K_emb = torch.nn.Embedding(8, nhid)
-        self.w_time_matrix_V_emb = torch.nn.Embedding(8, nhid)
 
         self.d_time_matrix_K_dropout = torch.nn.Dropout(p=dropout)
-        self.d_time_matrix_V_dropout = torch.nn.Dropout(p=dropout)
         self.w_time_matrix_K_dropout = torch.nn.Dropout(p=dropout)
-        self.w_time_matrix_V_dropout = torch.nn.Dropout(p=dropout)
 
         self.attention_layernorms = torch.nn.ModuleList()  # to be Q for self-attention
         self.attention_layers = torch.nn.ModuleList()
@@ -590,23 +579,18 @@ class IntervalAwareTransformer(nn.Module):
             new_fwd_layer = PointWiseFeedForward(nhid, dropout)
             self.forward_layers.append(new_fwd_layer)
 
-    def forward(self, seqs, batch_seq_lens, batch_input_h_matrices, batch_input_w_matrices, batch_label_h_matrices,
-                batch_label_w_matrices, batch_user_embedding, batch_input_idxes, batch_label_idxes):
+    def forward(self, seqs, batch_seq_lens, input_d_matrices, input_w_matrices, label_d_matrices,
+                label_w_matrices, user_embeddings, input_time_idxes, label_time_idxes):
 
-        d_time_matrix_K = self.d_time_matrix_K_emb(batch_input_h_matrices)
-        d_time_matrix_V = self.d_time_matrix_V_emb(batch_input_h_matrices)
+        d_time_matrix_K = self.d_time_matrix_K_emb(input_d_matrices)
         d_time_matrix_K = self.d_time_matrix_K_dropout(d_time_matrix_K)
-        d_time_matrix_V = self.d_time_matrix_V_dropout(d_time_matrix_V)
-
-        w_time_matrix_K = self.w_time_matrix_K_emb(batch_input_w_matrices)
-        w_time_matrix_V = self.w_time_matrix_V_emb(batch_input_w_matrices)
+        w_time_matrix_K = self.w_time_matrix_K_emb(input_w_matrices)
         w_time_matrix_K = self.w_time_matrix_K_dropout(w_time_matrix_K)
-        w_time_matrix_V = self.w_time_matrix_V_dropout(w_time_matrix_V)
 
-        label_d_time_matrix_K = self.d_time_matrix_K_emb(batch_label_h_matrices)
-        label_d_time_matrix_K = self.d_time_matrix_K_dropout(d_time_matrix_K)
-        label_w_time_matrix_K = self.w_time_matrix_K_emb(batch_label_w_matrices)
-        label_w_time_matrix_K = self.w_time_matrix_K_dropout(w_time_matrix_K)
+        label_d_time_matrix_K = self.d_time_matrix_K_emb(label_d_matrices)
+        label_d_time_matrix_K = self.d_time_matrix_K_dropout(label_d_time_matrix_K)
+        label_w_time_matrix_K = self.w_time_matrix_K_emb(label_w_matrices)
+        label_w_time_matrix_K = self.w_time_matrix_K_dropout(label_w_time_matrix_K)
 
         # mask attn
         attention_mask = ~torch.tril(torch.ones((seqs.shape[1], seqs.shape[1]), dtype=torch.bool, device=self.device))
@@ -617,20 +601,17 @@ class IntervalAwareTransformer(nn.Module):
         for i in range(len(self.attention_layers)):
             mha_outputs = self.attention_layers[i](seqs,
                                                    timeline_mask, attention_mask,
-                                                   d_time_matrix_K, w_time_matrix_K, d_time_matrix_V, w_time_matrix_V,
-                                                   batch_input_idxes)
+                                                   d_time_matrix_K, w_time_matrix_K,
+                                                   input_time_idxes)
             seqs = seqs + mha_outputs
-            # seqs = torch.transpose(seqs, 0, 1) # (T, N, C) -> (N, T, C)
-
-            # Point-wise Feed-forward, actually 2 Conv1D for channel wise fusion
             seqs = self.forward_layernorms[i](seqs)
             seqs = self.forward_layers[i](seqs)
             seqs *= ~timeline_mask.unsqueeze(-1)
-
         feats = self.last_layernorm(seqs)
 
-        feats = self.softAttention(feats, label_d_time_matrix_K, label_w_time_matrix_K, batch_user_embedding,
-                                   timeline_mask, attention_mask, batch_input_idxes, batch_label_idxes)
+
+        feats = self.softAttention(feats, label_d_time_matrix_K, label_w_time_matrix_K, user_embeddings,
+                                   timeline_mask, attention_mask, input_time_idxes, label_time_idxes)
         score = self.decoder_poi(feats)
 
         return score

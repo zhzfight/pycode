@@ -1,17 +1,11 @@
 """ Build the user-agnostic global trajectory flow map from the sequence data """
-import os
-import pickle
-import argparse
 import pandas as pd
-from tqdm import tqdm
 import collections
-import networkx as nx
-import numpy as np
-
+from param_parser import parameter_parser
 preversed_times=10
 
 
-def gowalla():
+def gowalla(args):
     print('now preprocess the dataset gowalla\n',
           'you must make sure that the loc-gowalla_totalCheckins.txt... file have been in /dataset/gowalla/\n')
     file_name = "./dataset/gowalla/loc-gowalla_totalCheckins.txt"
@@ -24,22 +18,13 @@ def gowalla():
     random_seed = 6824
 
     # 假设你想要采样的user数量是n
-    n = 40000
+    n = 20000
 
     # 从user列中采样n个user
     sampled_users = df['user_id'].drop_duplicates().sample(n, random_state=random_seed)
 
     # 从数据集中取出这些user的行构成一个新的df
     df = df[df['user_id'].isin(sampled_users)]
-
-    n = 51
-    # 定义一个自定义函数，用于取出每个组中最近的n条数据
-    def get_last_n_rows(group):
-        return group.sort_values(by='date_time', ascending=False).head(n)
-
-    # 按照user列进行分组，然后对每个组应用自定义函数
-    df = df.groupby('user_id').apply(get_last_n_rows)
-    df = df.reset_index(drop=True)
 
     origin_len=len(df)
     new_len=0
@@ -126,19 +111,15 @@ def gowalla():
     # 应用 keep_row 函数来过滤数据集
     df = shift_df[shift_df.apply(keep_row, axis=1)]
 
-    origin_len = len(df)
-    new_len = 0
-    count = 0
-    while origin_len != new_len and count < 10:
-        origin_len = new_len
-        count += 1
-        poi_counts = df.groupby("POI_id").size()
-        valid_pois = poi_counts[poi_counts >= preversed_times].index
-        df = df[df["POI_id"].isin(valid_pois)]
-        user_counts = df.groupby("user_id").size()
-        valid_users = user_counts[user_counts >= preversed_times].index
-        df = df[df["user_id"].isin(valid_users)]
-        new_len = len(df)
+    n = args.max_len
+
+    # 定义一个自定义函数，用于取出每个组中最近的n条数据
+    def get_last_n_rows(group):
+        return group.sort_values(by='date_time', ascending=False).head(n)
+
+    # 按照user列进行分组，然后对每个组应用自定义函数
+    df = df.groupby('user_id').apply(get_last_n_rows)
+    df = df.reset_index(drop=True)
 
 
     print(f"整个数据集的时间跨度为：{df['date_time'].min()} to {df['date_time'].max()} ")
@@ -159,14 +140,14 @@ def gowalla():
     return
 
 
-def tsmc(dataset):
+def tsmc(args):
     print('now preprocess the dataset launched by Yang DingQi called tsmc2014\n',
           'you must make sure that the dataset_TSMC2014_NYC.txt... file have been in /dataset/dataset_tsmc2014/\n')
-    if dataset==11:
+    if args.preprocess==11:
         file_name="./dataset/dataset_tsmc2014/dataset_TSMC2014_NYC.txt"
         save_name="./dataset/dataset_tsmc2014/NYC.csv"
         preserved_timezone=2
-    elif dataset==12:
+    elif args.preprocess==12:
         file_name = "./dataset/dataset_tsmc2014/dataset_TSMC2014_TKY.txt"
         save_name = "./dataset/dataset_tsmc2014/TKY.csv"
         preserved_timezone = 1
@@ -297,14 +278,9 @@ def tsmc(dataset):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(
-        description='dataset preprocess, this func make sure that the df have col '
-                    'of user_id,POI_id,POI_catid,local_time')
-    parser.add_argument('-dataset', type=int, required=True,
-                        help='choose dataset 11 tsmc_NYC 12 tsmc_TKY 21 gowalla')
+    args = parameter_parser()
 
-    args = parser.parse_args()
-    if args.dataset == 11 or args.dataset == 12:
-        tsmc(args.dataset)
-    if args.dataset==21:
-        gowalla()
+    if args.preprocess == 11 or args.preprocess == 12:
+        tsmc(args)
+    if args.preprocess==21:
+        gowalla(args)
