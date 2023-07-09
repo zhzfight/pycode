@@ -12,7 +12,7 @@ else:
 
 def parameter_parser():
     parser = argparse.ArgumentParser(description="Run TSAN.")
-    parser.add_argument('--max-len',type=int,default=50,help='max seq len')
+    parser.add_argument('--max-len',type=int,default=70,help='max seq len')
     parser.add_argument('--seed',
                         type=int,
                         default=42,
@@ -32,7 +32,7 @@ def parameter_parser():
                         help='11 tsmc nyc 12 tsmc tky 21 gowalla')
 
     parser.add_argument('--embed-mode',
-                        type=str,default='poi',)
+                        type=str,default='sage',)
     parser.add_argument('--seq-mode',
                         type=str, default='timeIntervalAwareTransformer',
                         help='pureTransformer timeIntervalAwareTransformer GRU')

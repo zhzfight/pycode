@@ -381,9 +381,9 @@ def train(args):
         managers_num = 100
         for _ in range(managers_num):
             managers.append(multiprocessing.Manager())
-        adj_dicts = [managers[i % managers_num].Queue() for i in range(poi_num)]
-        dis_dicts = [managers[i % managers_num].Queue() for i in range(poi_num)]
-        tasks = split_list([i for i in range(poi_num)], int(args.cpus / 2))
+        adj_dicts = [managers[i % managers_num].Queue() for i in range(poi_num+1)]
+        dis_dicts = [managers[i % managers_num].Queue() for i in range(poi_num+1)]
+        tasks = split_list([i for i in range(1,poi_num+1)], int(args.cpus / 2))
         for idx, task in enumerate(tasks):
             ap = produceSampleProcess(tasks=task, node_dicts=adj_dicts, adj_list=adj, restart_prob=args.restart_prob,
                                       num_walks=args.num_walks,
@@ -625,9 +625,8 @@ def train(args):
         for v_idx, (users,seq_lens, input_seqs, input_timebins, input_time_idxes, label_seqs, label_timebins, \
                 label_time_idxes, input_seq_d_matrices, input_seq_w_matrices, \
                 label_seq_d_matrices, label_seq_w_matrices, negs) in enumerate(val_loader):
-
+            input_seqs=torch.LongTensor(input_seqs).to(args.device)
             x=embed_table[input_seqs]
-
             if args.use_time_feat:
                 timebin_embed = time_embed_model(torch.LongTensor(input_timebins).to(args.device))
                 x = torch.cat((x, timebin_embed), dim=-1)
